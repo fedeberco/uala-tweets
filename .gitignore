@@ -50,3 +50,8 @@ local.*
 
 # Log files
 *.log
+
+# Binaries for migrations
+/migrate
+/migrate.*
+*.tar.gz
