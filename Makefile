@@ -8,11 +8,29 @@ run:
 test:
 	go test -v ./...
 
-# Clean build artifacts
 clean:
 	rm -rf bin/
 
 deps:
 	go mod download
 
-.PHONY: build run test clean deps
+# Docker Compose commands
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f
+
+ps:
+	docker compose ps
+
+# Start everything
+start: up run
+
+# Stop everything
+stop: down
+
+.PHONY: build run test clean deps up down logs ps start stop
