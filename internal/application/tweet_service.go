@@ -45,8 +45,9 @@ func (s *TweetService) CreateTweet(ctx context.Context, input CreateTweetInput) 
 	}
 
 	tweet := &domain.Tweet{
-		UserID:  input.UserID,
-		Content: input.Content,
+		UserID:    input.UserID,
+		Content:   input.Content,
+		CreatedAt: time.Now(),
 	}
 
 	if err := s.tweetRepo.Create(tweet); err != nil {
