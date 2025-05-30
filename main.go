@@ -118,18 +118,15 @@ func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.Us
 	userRoutes := r.Group("/users")
 	{
 		userRoutes.POST("", userHandler.CreateUser)
-		userRoutes.GET(":/id", userHandler.GetUser)
-		userRoutes.POST(":/id/follow/:target_id", followHandler.FollowUser)
-		userRoutes.POST(":/id/unfollow/:target_id", followHandler.UnfollowUser)
+		userRoutes.GET("/:id", userHandler.GetUser)
+		userRoutes.POST("/:id/follow/:target_id", followHandler.FollowUser)
+		userRoutes.POST("/:id/unfollow/:target_id", followHandler.UnfollowUser)
 	}
 
 	tweetRoutes := r.Group("/tweets")
 	{
 		tweetRoutes.POST("", tweetHandler.CreateTweet)
-		tweetRoutes.GET(":/id", tweetHandler.GetTweet)
-		userRoutes.GET("/:id", userHandler.GetUser)
-		userRoutes.POST("/:id/follow/:target_id", followHandler.FollowUser)
-		userRoutes.POST("/:id/unfollow/:target_id", followHandler.UnfollowUser)
+		tweetRoutes.GET("/:id", tweetHandler.GetTweet)
 	}
 
 	return r
