@@ -10,7 +10,7 @@ import (
 	"uala-tweets/internal/adapters/publishers"
 	"uala-tweets/internal/adapters/repositories"
 	"uala-tweets/internal/application"
-	"uala-tweets/internal/interfaces/http/handlers"
+	"uala-tweets/internal/interfaces/handlers"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -47,11 +47,12 @@ func main() {
 	// Initialize services
 	userService := application.NewUserService(userRepo)
 	followService := application.NewFollowService(userRepo, followRepo)
-	_ = application.NewTweetService(tweetRepo, tweetPub)
+	tweetService := application.NewTweetService(tweetRepo, tweetPub)
 
 	// Initialize HTTP handlers
 	followHandler := handlers.NewFollowHandler(followService)
 	userHandler := handlers.NewUserHandler(userService)
+	tweetHandler := handlers.NewTweetHandler(tweetService)
 
 	// Set up router
 	r := gin.Default()
@@ -70,6 +71,14 @@ func main() {
 		userRoutes.GET("/:id", userHandler.GetUser)
 		userRoutes.POST("/:id/follow/:target_id", followHandler.FollowUser)
 		userRoutes.POST("/:id/unfollow/:target_id", followHandler.UnfollowUser)
+	}
+
+	// Tweet routes
+	tweetRoutes := r.Group("/tweets")
+	{
+		tweetRoutes.POST("", tweetHandler.CreateTweet)
+		tweetRoutes.GET("/:id", tweetHandler.GetTweet)
+		tweetRoutes.GET("/:user_id", tweetHandler.GetUserTweets)
 	}
 
 	port := os.Getenv("PORT")
