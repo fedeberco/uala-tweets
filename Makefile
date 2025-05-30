@@ -4,7 +4,7 @@ build:
 
 run:
 	go mod tidy
-	go run main.go
+	DB_URL=$(DB_URL) go run main.go
 
 test:
 	go test -v ./...
@@ -27,6 +27,9 @@ migrate-up:
 migrate-down:
 	docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down
 
+migrate-down-all:
+	docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down -all
+
 # ------ /DATABASE
 
 # ------ DOCKER
@@ -45,9 +48,9 @@ ps:
 # ------/DOCKER
 
 # Start everything
-start: up run
+start: up migrate-up run
 
 # Stop everything
 stop: down
 
-.PHONY: build run test clean deps migrate-up migrate-down up down logs ps start stop
+.PHONY: build run test clean deps migrate-up migrate-down migrate-down-all up down logs ps start stop
