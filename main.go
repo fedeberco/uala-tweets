@@ -28,11 +28,12 @@ func main() {
 	followRepo := repositories.NewPostgreSQLFollowRepository(db)
 
 	// Initialize services
+	userService := application.NewUserService(userRepo)
 	followService := application.NewFollowService(userRepo, followRepo)
 
 	// Initialize HTTP handlers
 	followHandler := handlers.NewFollowHandler(followService)
-	userHandler := handlers.NewUserHandler(userRepo)
+	userHandler := handlers.NewUserHandler(userService)
 
 	// Set up router
 	r := gin.Default()
@@ -53,7 +54,6 @@ func main() {
 		userRoutes.POST("/:id/unfollow/:target_id", followHandler.UnfollowUser)
 	}
 
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

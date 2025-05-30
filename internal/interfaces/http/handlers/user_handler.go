@@ -4,22 +4,19 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"uala-tweets/internal/application"
-	"uala-tweets/internal/domain"
-	"uala-tweets/internal/ports/repositories"
 
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	userRepo repositories.UserRepository
+	userService *application.UserService
 }
 
-func NewUserHandler(userRepo repositories.UserRepository) *UserHandler {
+func NewUserHandler(userService *application.UserService) *UserHandler {
 	return &UserHandler{
-		userRepo: userRepo,
+		userService: userService,
 	}
 }
 
@@ -34,13 +31,11 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	user := &domain.User{
-		Username:  req.Username,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
+	user, err := h.userService.CreateUser(application.CreateUserInput{
+		Username: req.Username,
+	})
 
-	if err := h.userRepo.Create(user); err != nil {
+	if err != nil {
 		if errors.As(err, &application.ErrUserAlreadyExists{}) {
 			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
 			return
@@ -59,7 +54,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userRepo.GetByID(id)
+	user, err := h.userService.GetUser(id)
 	if err != nil {
 		if errors.As(err, &application.ErrUserNotFound{}) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
