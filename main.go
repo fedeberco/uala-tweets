@@ -7,12 +7,14 @@ import (
 	"os"
 	"time"
 
+	"uala-tweets/internal/adapters/publishers"
 	"uala-tweets/internal/adapters/repositories"
 	"uala-tweets/internal/application"
 	"uala-tweets/internal/interfaces/http/handlers"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	"github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -23,13 +25,29 @@ func main() {
 	}
 	defer db.Close()
 
+	// Initialize kafka writer
+	kafkaWriter := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        "tweets.created",
+		Balancer:     &kafka.LeastBytes{},
+		RequiredAcks: kafka.RequireOne,
+		Async:        false,
+		BatchSize:    1,
+	}
+	defer kafkaWriter.Close()
+
 	// Initialize repositories
 	userRepo := repositories.NewPostgreSQLUserRepository(db)
 	followRepo := repositories.NewPostgreSQLFollowRepository(db)
+	tweetRepo := repositories.NewPostgreSQLTweetRepository(db)
+
+	// Initialize publishers
+	tweetPub := publishers.NewKafkaTweetPublisher(kafkaWriter)
 
 	// Initialize services
 	userService := application.NewUserService(userRepo)
 	followService := application.NewFollowService(userRepo, followRepo)
+	_ = application.NewTweetService(tweetRepo, tweetPub)
 
 	// Initialize HTTP handlers
 	followHandler := handlers.NewFollowHandler(followService)
