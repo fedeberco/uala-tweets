@@ -50,17 +50,17 @@ func (s *TweetService) CreateTweet(ctx context.Context, input CreateTweetInput) 
 		CreatedAt: time.Now(),
 	}
 
+	// Store synchronously
 	if err := s.tweetRepo.Create(tweet); err != nil {
 		return nil, fmt.Errorf("failed to create tweet: %w", err)
 	}
 
-	go func() {
-		// The original request's context might be canceled before the publish completes
-		// so its better to create a new context with a timeout
+	// Publish asynchronously
+	go func(tweet *domain.Tweet) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.tweetPub.Publish(ctx, tweet)
-	}()
+	}(tweet)
 
 	return tweet, nil
 }

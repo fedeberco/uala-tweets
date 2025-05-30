@@ -7,10 +7,14 @@ import (
 	"os"
 	"time"
 
-	"uala-tweets/internal/adapters/publishers"
-	"uala-tweets/internal/adapters/repositories"
+	adapters_consumers "uala-tweets/internal/adapters/consumers"
+	adapters_publishers "uala-tweets/internal/adapters/publishers"
+	adapters_repositories "uala-tweets/internal/adapters/repositories"
 	"uala-tweets/internal/application"
 	"uala-tweets/internal/interfaces/handlers"
+
+	pubports "uala-tweets/internal/ports/publishers"
+	repoports "uala-tweets/internal/ports/repositories"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -18,15 +22,44 @@ import (
 )
 
 func main() {
-	// Initialize database connection
+	db := mustSetupDatabase()
+	defer db.Close()
+
+	kafkaWriter := initKafkaWriter()
+	defer kafkaWriter.Close()
+
+	kafkaReader := initKafkaReader()
+
+	userRepo, followRepo, tweetRepo := initRepositories(db)
+	tweetPub := adapters_publishers.NewKafkaTweetPublisher(kafkaWriter)
+
+	startTweetConsumer(kafkaReader, tweetRepo)
+
+	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub)
+	followHandler, userHandler, tweetHandler := initHandlers(userService, followService, tweetService)
+
+	r := setupRouter(followHandler, userHandler, tweetHandler)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Server starting on port %s", port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func mustSetupDatabase() *sql.DB {
 	db, err := setupDatabase()
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	return db
+}
 
-	// Initialize kafka writer
-	kafkaWriter := &kafka.Writer{
+func initKafkaWriter() *kafka.Writer {
+	return &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092"),
 		Topic:        "tweets.created",
 		Balancer:     &kafka.LeastBytes{},
@@ -34,62 +67,72 @@ func main() {
 		Async:        false,
 		BatchSize:    1,
 	}
-	defer kafkaWriter.Close()
+}
 
-	// Initialize repositories
-	userRepo := repositories.NewPostgreSQLUserRepository(db)
-	followRepo := repositories.NewPostgreSQLFollowRepository(db)
-	tweetRepo := repositories.NewPostgreSQLTweetRepository(db)
+func initKafkaReader() *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   "tweets.created",
+		GroupID: "tweet-consumer-group",
+	})
+}
 
-	// Initialize publishers
-	tweetPub := publishers.NewKafkaTweetPublisher(kafkaWriter)
+func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRepository, repoports.TweetRepository) {
+	userRepo := adapters_repositories.NewPostgreSQLUserRepository(db)
+	followRepo := adapters_repositories.NewPostgreSQLFollowRepository(db)
+	tweetRepo := adapters_repositories.NewPostgreSQLTweetRepository(db)
+	return userRepo, followRepo, tweetRepo
+}
 
-	// Initialize services
+func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository) {
+	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo)
+	go func() {
+		log.Println("KafkaTweetConsumer started...")
+		if err := consumer.Start(context.Background()); err != nil {
+			log.Printf("KafkaTweetConsumer error: %v", err)
+		}
+	}()
+}
+
+func initServices(userRepo repoports.UserRepository, followRepo repoports.FollowRepository, tweetRepo repoports.TweetRepository, tweetPub pubports.TweetPublisher) (*application.UserService, *application.FollowService, *application.TweetService) {
 	userService := application.NewUserService(userRepo)
 	followService := application.NewFollowService(userRepo, followRepo)
 	tweetService := application.NewTweetService(tweetRepo, tweetPub)
+	return userService, followService, tweetService
+}
 
-	// Initialize HTTP handlers
-	followHandler := handlers.NewFollowHandler(followService)
-	userHandler := handlers.NewUserHandler(userService)
-	tweetHandler := handlers.NewTweetHandler(tweetService)
+func initHandlers(userService *application.UserService, followService *application.FollowService, tweetService *application.TweetService) (followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler) {
+	followHandler = handlers.NewFollowHandler(followService)
+	userHandler = handlers.NewUserHandler(userService)
+	tweetHandler = handlers.NewTweetHandler(tweetService)
+	return
+}
 
-	// Set up router
+func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler) *gin.Engine {
 	r := gin.Default()
 
-	// Routes
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-		})
+		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// User routes
 	userRoutes := r.Group("/users")
 	{
 		userRoutes.POST("", userHandler.CreateUser)
+		userRoutes.GET(":/id", userHandler.GetUser)
+		userRoutes.POST(":/id/follow/:target_id", followHandler.FollowUser)
+		userRoutes.POST(":/id/unfollow/:target_id", followHandler.UnfollowUser)
+	}
+
+	tweetRoutes := r.Group("/tweets")
+	{
+		tweetRoutes.POST("", tweetHandler.CreateTweet)
+		tweetRoutes.GET(":/id", tweetHandler.GetTweet)
 		userRoutes.GET("/:id", userHandler.GetUser)
 		userRoutes.POST("/:id/follow/:target_id", followHandler.FollowUser)
 		userRoutes.POST("/:id/unfollow/:target_id", followHandler.UnfollowUser)
 	}
 
-	// Tweet routes
-	tweetRoutes := r.Group("/tweets")
-	{
-		tweetRoutes.POST("", tweetHandler.CreateTweet)
-		tweetRoutes.GET("/:id", tweetHandler.GetTweet)
-		tweetRoutes.GET("/:user_id", tweetHandler.GetUserTweets)
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Server starting on port %s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	return r
 }
 
 func setupDatabase() (*sql.DB, error) {

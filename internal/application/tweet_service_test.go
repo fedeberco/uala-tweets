@@ -72,7 +72,10 @@ func TestTweetService_CreateTweet(t *testing.T) {
 				UserID:  1,
 				Content: "",
 			},
-			mockSetup:     func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {},
+			mockSetup: func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {
+				// Prevent panic from async Publish
+				pub.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
 			expectedError: "tweet content cannot be empty",
 		},
 		{
@@ -84,7 +87,9 @@ func TestTweetService_CreateTweet(t *testing.T) {
 					"ultricies tincidunt, nunc nisl aliquam nunc, vitae aliquam nisl nunc vitae nisl. " +
 					"Sed vitae nisl eget nisl aliquam tincidunt. Nullam auctor, nisl eget ultricies tincidunt.",
 			},
-			mockSetup:     func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {},
+			mockSetup: func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {
+				pub.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
 			expectedError: "tweet content is too long",
 		},
 		{
@@ -95,6 +100,7 @@ func TestTweetService_CreateTweet(t *testing.T) {
 			},
 			mockSetup: func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {
 				repo.On("Create", mock.AnythingOfType("*domain.Tweet")).Return(errors.New("database error"))
+				pub.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
 			expectedError: "failed to create tweet: database error",
 		},
@@ -185,15 +191,16 @@ func TestTweetService_GetTweet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockTweetRepository)
+			mockPub := new(MockTweetPublisher)
+
 			tt.setupMock(mockRepo)
 
-			service := application.NewTweetService(mockRepo, nil)
-
+			service := application.NewTweetService(mockRepo, mockPub)
 			tweet, err := service.GetTweet(context.Background(), tt.tweetID)
 
 			if tt.expectedError != "" {
 				assert.ErrorContains(t, err, tt.expectedError)
-				assert.Nil(t, tt.expectedTweet)
+				assert.Nil(t, tweet)
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, tweet)
@@ -203,6 +210,7 @@ func TestTweetService_GetTweet(t *testing.T) {
 			}
 
 			mockRepo.AssertExpectations(t)
+			mockPub.AssertExpectations(t)
 		})
 	}
 }
