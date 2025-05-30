@@ -1,8 +1,6 @@
 package application
 
 import (
-	"errors"
-
 	"uala-tweets/internal/ports/repositories"
 )
 
@@ -19,12 +17,16 @@ func NewFollowService(userRepo repositories.UserRepository, followRepo repositor
 }
 
 func (s *FollowService) Follow(followerID, followedID int) error {
+	if followerID == followedID {
+		return NewErrAlreadyFollowing(followerID, followedID)
+	}
+
 	followerExists, err := s.userRepo.Exists(followerID)
 	if err != nil {
 		return err
 	}
 	if !followerExists {
-		return errors.New("follower user does not exist")
+		return NewErrUserNotFound(followerID)
 	}
 
 	followedExists, err := s.userRepo.Exists(followedID)
@@ -32,7 +34,7 @@ func (s *FollowService) Follow(followerID, followedID int) error {
 		return err
 	}
 	if !followedExists {
-		return errors.New("followed user does not exist")
+		return NewErrUserNotFound(followedID)
 	}
 
 	isFollowing, err := s.followRepo.IsFollowing(followerID, followedID)
@@ -40,7 +42,7 @@ func (s *FollowService) Follow(followerID, followedID int) error {
 		return err
 	}
 	if isFollowing {
-		return errors.New("already following this user")
+		return NewErrAlreadyFollowing(followerID, followedID)
 	}
 
 	return s.followRepo.Follow(followerID, followedID)
@@ -52,7 +54,7 @@ func (s *FollowService) Unfollow(followerID, followedID int) error {
 		return err
 	}
 	if !followerExists {
-		return errors.New("follower user does not exist")
+		return NewErrUserNotFound(followerID)
 	}
 
 	followedExists, err := s.userRepo.Exists(followedID)
@@ -60,7 +62,7 @@ func (s *FollowService) Unfollow(followerID, followedID int) error {
 		return err
 	}
 	if !followedExists {
-		return errors.New("followed user does not exist")
+		return NewErrUserNotFound(followedID)
 	}
 
 	isFollowing, err := s.followRepo.IsFollowing(followerID, followedID)
@@ -68,7 +70,7 @@ func (s *FollowService) Unfollow(followerID, followedID int) error {
 		return err
 	}
 	if !isFollowing {
-		return errors.New("not currently following this user")
+		return NewErrNotFollowing(followerID, followedID)
 	}
 
 	return s.followRepo.Unfollow(followerID, followedID)

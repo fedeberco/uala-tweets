@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"uala-tweets/internal/application"
 	"uala-tweets/internal/domain"
 )
 
@@ -36,6 +37,10 @@ func (r *PostgreSQLUserRepository) Create(user *domain.User) error {
 	).Scan(&user.ID)
 
 	if err != nil {
+		// Check for unique violation (duplicate username)
+		if err.Error() == "pq: duplicate key value violates unique constraint \"users_username_key\"" {
+			return application.NewErrUserAlreadyExists(user.Username)
+		}
 		return err
 	}
 
@@ -62,7 +67,7 @@ func (r *PostgreSQLUserRepository) GetByID(id int) (*domain.User, error) {
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, application.NewErrUserNotFound(id)
 		}
 		return nil, err
 	}

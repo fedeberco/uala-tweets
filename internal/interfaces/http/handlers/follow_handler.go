@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -38,10 +39,10 @@ func (h *FollowHandler) FollowUser(c *gin.Context) {
 
 	err = h.followService.Follow(followerID, targetID)
 	if err != nil {
-		switch err.Error() {
-		case "follower user does not exist", "followed user does not exist":
+		switch {
+		case errors.As(err, &application.ErrUserNotFound{}):
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
-		case "already following this user":
+		case errors.As(err, &application.ErrAlreadyFollowing{}):
 			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
@@ -69,10 +70,10 @@ func (h *FollowHandler) UnfollowUser(c *gin.Context) {
 
 	err = h.followService.Unfollow(followerID, targetID)
 	if err != nil {
-		switch err.Error() {
-		case "follower user does not exist", "followed user does not exist":
+		switch {
+		case errors.As(err, &application.ErrUserNotFound{}):
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
-		case "not currently following this user":
+		case errors.As(err, &application.ErrNotFollowing{}):
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})

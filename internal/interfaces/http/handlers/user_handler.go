@@ -1,25 +1,23 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"uala-tweets/internal/application"
 	"uala-tweets/internal/domain"
+	"uala-tweets/internal/ports/repositories"
 
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	userRepo UserRepository
+	userRepo repositories.UserRepository
 }
 
-type UserRepository interface {
-	Create(user *domain.User) error
-	GetByID(id int) (*domain.User, error)
-}
-
-func NewUserHandler(userRepo UserRepository) *UserHandler {
+func NewUserHandler(userRepo repositories.UserRepository) *UserHandler {
 	return &UserHandler{
 		userRepo: userRepo,
 	}
@@ -43,6 +41,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	if err := h.userRepo.Create(user); err != nil {
+		if errors.As(err, &application.ErrUserAlreadyExists{}) {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to create user"})
 		return
 	}
@@ -59,12 +61,11 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(id)
 	if err != nil {
+		if errors.As(err, &application.ErrUserNotFound{}) {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to get user"})
-		return
-	}
-
-	if user == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "user not found"})
 		return
 	}
 
