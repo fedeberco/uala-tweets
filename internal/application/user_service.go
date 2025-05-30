@@ -1,6 +1,7 @@
 package application
 
 import (
+	"errors"
 	"time"
 
 	"uala-tweets/internal/domain"
@@ -22,6 +23,10 @@ type CreateUserInput struct {
 }
 
 func (s *UserService) CreateUser(input CreateUserInput) (*domain.User, error) {
+	if input.Username == "" {
+		return nil, errors.New("username cannot be empty")
+	}
+
 	user := &domain.User{
 		Username:  input.Username,
 		CreatedAt: time.Now().UTC(),
