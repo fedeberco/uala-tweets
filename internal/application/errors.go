@@ -20,6 +20,10 @@ type (
 		FollowerID int
 		FollowedID int
 	}
+
+	ErrInvalidInput struct {
+		Message string
+	}
 )
 
 func (e ErrUserNotFound) Error() string {
@@ -58,4 +62,12 @@ func NewErrNotFollowing(followerID, followedID int) error {
 		FollowerID: followerID,
 		FollowedID: followedID,
 	}
+}
+
+func (e ErrInvalidInput) Error() string {
+	return e.Message
+}
+
+func NewErrInvalidInput(message string) error {
+	return &ErrInvalidInput{Message: message}
 }

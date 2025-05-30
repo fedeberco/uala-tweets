@@ -12,108 +12,73 @@ import (
 	"uala-tweets/internal/domain"
 )
 
-type mockUserRepository struct {
-	mock.Mock
-}
-
-func (m *mockUserRepository) Create(user *domain.User) error {
-	args := m.Called(user)
-	return args.Error(0)
-}
-
-func (m *mockUserRepository) GetByID(id int) (*domain.User, error) {
-	args := m.Called(id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.User), args.Error(1)
-}
-
-func (m *mockUserRepository) Exists(id int) (bool, error) {
-	args := m.Called(id)
-	return args.Bool(0), args.Error(1)
-}
-
 func TestUserService_CreateUser(t *testing.T) {
 	tests := []struct {
-		name       string
-		setupMock  func(*mockUserRepository)
-		input      application.CreateUserInput
-		expectErr  bool
-		expectUser *domain.User
-		expectFunc func(*testing.T, *domain.User, error)
+		name        string
+		username    string
+		setupMock   func(*application.MockUserRepository)
+		expectErr   bool
+		errType     error
+		errContains string
 	}{
 		{
-			name: "successful user creation",
-			setupMock: func(m *mockUserRepository) {
-				m.On("Create", mock.AnythingOfType("*domain.User")).
-					Run(func(args mock.Arguments) {
-						user := args.Get(0).(*domain.User)
-						user.ID = 1
-					}).
-					Return(nil)
-			},
-			input: application.CreateUserInput{
-				Username: "testuser",
+			name:     "successful user creation",
+			username: "testuser",
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("Create", mock.MatchedBy(func(user *domain.User) bool {
+					user.ID = 123 // Set a non-zero ID
+					return user.Username == "testuser"
+				})).Return(nil)
 			},
 			expectErr: false,
-			expectFunc: func(t *testing.T, user *domain.User, err error) {
-				assert.NoError(t, err)
-				assert.NotNil(t, user)
-				assert.Equal(t, 1, user.ID)
-				assert.Equal(t, "testuser", user.Username)
-				assert.False(t, user.CreatedAt.IsZero())
-				assert.False(t, user.UpdatedAt.IsZero())
-			},
 		},
 		{
-			name: "empty username",
-			setupMock: func(m *mockUserRepository) {
-				// No repository calls expected
+			name:     "empty username",
+			username: "",
+			setupMock: func(repo *application.MockUserRepository) {
+				// No repository calls expected for empty username
 			},
-			input: application.CreateUserInput{
-				Username: "",
-			},
-			expectErr: true,
-			expectFunc: func(t *testing.T, user *domain.User, err error) {
-				assert.Error(t, err)
-				assert.Nil(t, user)
-			},
+			expectErr:   true,
+			errType:     &application.ErrInvalidInput{},
+			errContains: "username cannot be empty",
 		},
 		{
-			name: "repository error",
-			setupMock: func(m *mockUserRepository) {
-				m.On("Create", mock.AnythingOfType("*domain.User")).
-					Return(assert.AnError)
+			name:     "repository error",
+			username: "testuser",
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("Create", mock.Anything).Return(assert.AnError)
 			},
-			input: application.CreateUserInput{
-				Username: "testuser",
-			},
-			expectErr: true,
-			expectFunc: func(t *testing.T, user *domain.User, err error) {
-				assert.Error(t, err)
-				assert.Nil(t, user)
-			},
+			expectErr:   true,
+			errContains: "failed to create user",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			mockRepo := new(mockUserRepository)
+			mockRepo := &application.MockUserRepository{}
 			tt.setupMock(mockRepo)
 
 			service := application.NewUserService(mockRepo)
 
-			// Execute
-			user, err := service.CreateUser(tt.input)
+			user, err := service.CreateUser(application.CreateUserInput{
+				Username: tt.username,
+			})
 
-			// Verify
-			if tt.expectFunc != nil {
-				tt.expectFunc(t, user, err)
+			if tt.expectErr {
+				require.Error(t, err)
+				if tt.errType != nil {
+					assert.IsType(t, tt.errType, err)
+				}
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.username, user.Username)
+				assert.NotZero(t, user.ID)
+				assert.WithinDuration(t, time.Now(), user.CreatedAt, time.Second)
 			}
 
-			// Assert that all expectations were met
 			mockRepo.AssertExpectations(t)
 		})
 	}
@@ -121,64 +86,61 @@ func TestUserService_CreateUser(t *testing.T) {
 
 func TestUserService_GetUser(t *testing.T) {
 	tests := []struct {
-		name       string
-		setupMock  func(*mockUserRepository, int)
-		userID     int
-		expectErr  bool
-		expectFunc func(*testing.T, *domain.User, error)
+		name      string
+		userID    int
+		setupMock func(*application.MockUserRepository)
+		expect    *domain.User
+		expectErr bool
+		errType   error
 	}{
 		{
-			name: "user found",
-			setupMock: func(m *mockUserRepository, id int) {
-				m.On("GetByID", id).
-					Return(&domain.User{
-						ID:        id,
-						Username:  "testuser",
-						CreatedAt: time.Now().UTC(),
-						UpdatedAt: time.Now().UTC(),
-					}, nil)
+			name:   "successful get user",
+			userID: 1,
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("GetByID", 1).Return(&domain.User{
+					ID:        1,
+					Username:  "testuser",
+					CreatedAt: time.Now(),
+				}, nil)
 			},
-			userID:    1,
+			expect: &domain.User{
+				ID:       1,
+				Username: "testuser",
+			},
 			expectErr: false,
-			expectFunc: func(t *testing.T, user *domain.User, err error) {
-				assert.NoError(t, err)
-				require.NotNil(t, user)
-				assert.Equal(t, 1, user.ID)
-				assert.Equal(t, "testuser", user.Username)
-			},
 		},
 		{
-			name: "user not found",
-			setupMock: func(m *mockUserRepository, id int) {
-				m.On("GetByID", id).
-					Return((*domain.User)(nil), assert.AnError)
+			name:   "user not found",
+			userID: 999,
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("GetByID", 999).Return((*domain.User)(nil), nil)
 			},
-			userID:    999,
+			expect:    nil,
 			expectErr: true,
-			expectFunc: func(t *testing.T, user *domain.User, err error) {
-				assert.Error(t, err)
-				assert.Nil(t, user)
-			},
+			errType:   &application.ErrUserNotFound{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			mockRepo := new(mockUserRepository)
-			tt.setupMock(mockRepo, tt.userID)
+			mockRepo := &application.MockUserRepository{}
+			tt.setupMock(mockRepo)
 
 			service := application.NewUserService(mockRepo)
 
-			// Execute
 			user, err := service.GetUser(tt.userID)
 
-			// Verify
-			if tt.expectFunc != nil {
-				tt.expectFunc(t, user, err)
+			if tt.expectErr {
+				assert.Error(t, err)
+				if tt.errType != nil {
+					assert.IsType(t, tt.errType, err)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expect.ID, user.ID)
+				assert.Equal(t, tt.expect.Username, user.Username)
 			}
 
-			// Assert that all expectations were met
 			mockRepo.AssertExpectations(t)
 		})
 	}
@@ -186,67 +148,58 @@ func TestUserService_GetUser(t *testing.T) {
 
 func TestUserService_UserExists(t *testing.T) {
 	tests := []struct {
-		name       string
-		setupMock  func(*mockUserRepository, int)
-		userID     int
-		expectErr  bool
-		expectFunc func(*testing.T, bool, error)
+		name      string
+		userID    int
+		setupMock func(*application.MockUserRepository)
+		expect    bool
+		expectErr bool
+		errType   error
 	}{
 		{
-			name: "user exists",
-			setupMock: func(m *mockUserRepository, id int) {
-				m.On("Exists", id).Return(true, nil)
+			name:   "user exists",
+			userID: 1,
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("Exists", 1).Return(true, nil)
 			},
-			userID:    1,
+			expect:    true,
 			expectErr: false,
-			expectFunc: func(t *testing.T, exists bool, err error) {
-				assert.NoError(t, err)
-				assert.True(t, exists)
-			},
 		},
 		{
-			name: "user does not exist",
-			setupMock: func(m *mockUserRepository, id int) {
-				m.On("Exists", id).Return(false, nil)
+			name:   "user does not exist",
+			userID: 999,
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("Exists", 999).Return(false, nil)
 			},
-			userID:    999,
+			expect:    false,
 			expectErr: false,
-			expectFunc: func(t *testing.T, exists bool, err error) {
-				assert.NoError(t, err)
-				assert.False(t, exists)
-			},
 		},
 		{
-			name: "repository error",
-			setupMock: func(m *mockUserRepository, id int) {
-				m.On("Exists", id).Return(false, assert.AnError)
+			name:   "repository error",
+			userID: 1,
+			setupMock: func(repo *application.MockUserRepository) {
+				repo.On("Exists", 1).Return(false, assert.AnError)
 			},
-			userID:    1,
+			expect:    false,
 			expectErr: true,
-			expectFunc: func(t *testing.T, exists bool, err error) {
-				assert.Error(t, err)
-				assert.False(t, exists)
-			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			mockRepo := new(mockUserRepository)
-			tt.setupMock(mockRepo, tt.userID)
+			mockRepo := &application.MockUserRepository{}
+			tt.setupMock(mockRepo)
 
 			service := application.NewUserService(mockRepo)
 
-			// Execute
 			exists, err := service.UserExists(tt.userID)
 
-			// Verify
-			if tt.expectFunc != nil {
-				tt.expectFunc(t, exists, err)
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expect, exists)
 			}
 
-			// Assert that all expectations were met
 			mockRepo.AssertExpectations(t)
 		})
 	}

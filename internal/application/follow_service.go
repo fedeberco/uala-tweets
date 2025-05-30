@@ -75,3 +75,28 @@ func (s *FollowService) Unfollow(followerID, followedID int) error {
 
 	return s.followRepo.Unfollow(followerID, followedID)
 }
+
+func (s *FollowService) IsFollowing(followerID, followedID int) (bool, error) {
+	followerExists, err := s.userRepo.Exists(followerID)
+	if err != nil {
+		return false, err
+	}
+	if !followerExists {
+		return false, NewErrUserNotFound(followerID)
+	}
+
+	followedExists, err := s.userRepo.Exists(followedID)
+	if err != nil {
+		return false, err
+	}
+	if !followedExists {
+		return false, NewErrUserNotFound(followedID)
+	}
+
+	isFollowing, err := s.followRepo.IsFollowing(followerID, followedID)
+	if err != nil {
+		return false, err
+	}
+
+	return isFollowing, nil
+}

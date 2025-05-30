@@ -2,6 +2,7 @@ package application
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"uala-tweets/internal/domain"
@@ -24,7 +25,7 @@ type CreateUserInput struct {
 
 func (s *UserService) CreateUser(input CreateUserInput) (*domain.User, error) {
 	if input.Username == "" {
-		return nil, errors.New("username cannot be empty")
+		return nil, &ErrInvalidInput{Message: "username cannot be empty"}
 	}
 
 	user := &domain.User{
@@ -34,14 +35,25 @@ func (s *UserService) CreateUser(input CreateUserInput) (*domain.User, error) {
 	}
 
 	if err := s.userRepo.Create(user); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if user.ID == 0 {
+		return nil, errors.New("user created but ID not set")
 	}
 
 	return user, nil
 }
 
 func (s *UserService) GetUser(id int) (*domain.User, error) {
-	return s.userRepo.GetByID(id)
+	user, err := s.userRepo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, &ErrUserNotFound{UserID: id}
+	}
+	return user, nil
 }
 
 func (s *UserService) UserExists(id int) (bool, error) {
