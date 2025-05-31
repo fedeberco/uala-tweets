@@ -73,6 +73,29 @@ func (r *PostgreSQLFollowRepository) Unfollow(followerID, followedID int) error 
 	return nil
 }
 
+func (r *PostgreSQLFollowRepository) GetFollowers(userID int) ([]int, error) {
+	query := `SELECT follower_id FROM follows WHERE followed_id = $1`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var followers []int
+	for rows.Next() {
+		var followerID int
+		if err := rows.Scan(&followerID); err != nil {
+			return nil, err
+		}
+		followers = append(followers, followerID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return followers, nil
+}
+
 func (r *PostgreSQLFollowRepository) IsFollowing(followerID, followedID int) (bool, error) {
 	query := `
 		SELECT EXISTS(
