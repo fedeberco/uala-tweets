@@ -10,6 +10,7 @@ import (
 	adapters_consumers "uala-tweets/internal/adapters/consumers"
 	adapters_publishers "uala-tweets/internal/adapters/publishers"
 	adapters_repositories "uala-tweets/internal/adapters/repositories"
+	adapters_redis "uala-tweets/internal/adapters/redis"
 	"uala-tweets/internal/application"
 	"uala-tweets/internal/interfaces/handlers"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -36,9 +38,9 @@ func main() {
 	startTweetConsumer(kafkaReader, tweetRepo)
 
 	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub)
-	followHandler, userHandler, tweetHandler := initHandlers(userService, followService, tweetService)
+	followHandler, userHandler, tweetHandler, timelineHandler := initHandlers(userService, followService, tweetService)
 
-	r := setupRouter(followHandler, userHandler, tweetHandler)
+	r := setupRouter(followHandler, userHandler, tweetHandler, timelineHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -48,6 +50,24 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func initTimelineHandler() *handlers.TimelineHandler {
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		Password: "",
+		DB:       0,
+	})
+	timelineCache := adapters_redis.NewTimelineCacheRedis(redisClient)
+	timelineService := application.NewTimelineService(timelineCache)
+	return handlers.NewTimelineHandler(timelineService)
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func mustSetupDatabase() *sql.DB {
@@ -101,14 +121,15 @@ func initServices(userRepo repoports.UserRepository, followRepo repoports.Follow
 	return userService, followService, tweetService
 }
 
-func initHandlers(userService *application.UserService, followService *application.FollowService, tweetService *application.TweetService) (followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler) {
+func initHandlers(userService *application.UserService, followService *application.FollowService, tweetService *application.TweetService) (followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler, timelineHandler *handlers.TimelineHandler) {
 	followHandler = handlers.NewFollowHandler(followService)
 	userHandler = handlers.NewUserHandler(userService)
 	tweetHandler = handlers.NewTweetHandler(tweetService)
+	timelineHandler = initTimelineHandler()
 	return
 }
 
-func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler) *gin.Engine {
+func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler, timelineHandler *handlers.TimelineHandler) *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
@@ -129,6 +150,7 @@ func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.Us
 		tweetRoutes.GET("/:id", tweetHandler.GetTweet)
 	}
 
+	r.GET("/timelines/:user_id", timelineHandler.GetTimelineHandler)
 	return r
 }
 
