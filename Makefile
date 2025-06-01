@@ -36,15 +36,15 @@ test-db-up:
 	@sleep 2
 
 # Migration commands using Docker
-migrate-up:
+migrate-up: up
 	@echo "Running migrations..."
 	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose up
 
-migrate-down:
+migrate-down: up
 	@echo "Rolling back last migration..."
 	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down
 
-migrate-down-all:
+migrate-down-all: up
 	@echo "Rolling back all migrations..."
 	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down -all
 
