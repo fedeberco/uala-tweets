@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 	"uala-tweets/internal/domain"
-	"uala-tweets/internal/ports/repositories"
 	"uala-tweets/internal/ports/publishers"
+	"uala-tweets/internal/ports/repositories"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -21,13 +21,15 @@ type KafkaTweetConsumer struct {
 	reader     KafkaReader
 	tweetRepo  repositories.TweetRepository
 	fanoutPub  publishers.TimelineFanoutPublisher
+	followRepo repositories.FollowRepository
 }
 
-func NewKafkaTweetConsumer(reader KafkaReader, tweetRepo repositories.TweetRepository, fanoutPub publishers.TimelineFanoutPublisher) *KafkaTweetConsumer {
+func NewKafkaTweetConsumer(reader KafkaReader, tweetRepo repositories.TweetRepository, fanoutPub publishers.TimelineFanoutPublisher, followRepo repositories.FollowRepository) *KafkaTweetConsumer {
 	return &KafkaTweetConsumer{
-		reader:    reader,
-		tweetRepo: tweetRepo,
-		fanoutPub: fanoutPub,
+		reader:     reader,
+		tweetRepo:  tweetRepo,
+		fanoutPub:  fanoutPub,
+		followRepo: followRepo,
 	}
 }
 
@@ -48,16 +50,24 @@ func (c *KafkaTweetConsumer) Start(ctx context.Context) error {
 			continue
 		}
 
-		// After successful persistence, publish fan-out event for timeline
-		go func(tweetID int64, authorID int64) {
-			event := &domain.TimelineFanoutEvent{
-				TweetID: tweetID,
-				UserIDs: []int{int(authorID)}, // Only the author for now; consumer will expand
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = c.fanoutPub.PublishFanoutEvent(ctx, event)
-		}(tweet.ID, tweet.UserID)
+		// After successful persistence, publish one fan-out event per user (author + followers)
+		followers, err := c.followRepo.GetFollowers(int(tweet.UserID))
+		if err != nil {
+			// Optionally log error
+			followers = []int{}
+		}
+		userIDs := append([]int{int(tweet.UserID)}, followers...)
+		for _, userID := range userIDs {
+			go func(uid int) {
+				event := &domain.TimelineFanoutEvent{
+					TweetID: tweet.ID,
+					UserID:  uid,
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = c.fanoutPub.PublishFanoutEvent(ctx, event)
+			}(userID)
+		}
 	}
 }
 

@@ -34,21 +34,12 @@ func (c *KafkaTimelineFanoutConsumer) Start(ctx context.Context) error {
 			// Optionally log and skip
 			continue
 		}
-		if len(event.UserIDs) == 0 {
+		if event.UserID == 0 {
 			continue // invalid event
 		}
-		authorID := event.UserIDs[0]
-		followers, err := c.followRepo.GetFollowers(authorID)
-		if err != nil {
+		if err := c.timelineCache.AddToTimeline(event.UserID, event.TweetID); err != nil {
 			// Optionally log error
 			continue
-		}
-		targets := append([]int{authorID}, followers...)
-		for _, userID := range targets {
-			if err := c.timelineCache.AddToTimeline(userID, event.TweetID); err != nil {
-				// Optionally log error
-				continue
-			}
 		}
 	}
 }
