@@ -70,20 +70,55 @@ func (r *PostgreSQLTweetRepository) GetByUserID(userID int64) ([]*domain.Tweet, 
 	}
 	defer rows.Close()
 
-	var tweets []*domain.Tweet
+	tweets := make([]*domain.Tweet, 0)
 	for rows.Next() {
 		tweet := &domain.Tweet{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&tweet.ID,
 			&tweet.UserID,
 			&tweet.Content,
 			&tweet.CreatedAt,
 			&tweet.UpdatedAt,
-		); err != nil {
+		)
+		if err != nil {
 			return nil, err
 		}
 		tweets = append(tweets, tweet)
 	}
 
-	return tweets, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tweets, nil
+}
+
+func (r *PostgreSQLTweetRepository) GetTweetIDsByUser(userID int) ([]int64, error) {
+	query := `
+		SELECT id
+		FROM tweets
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tweetIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		tweetIDs = append(tweetIDs, id)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tweetIDs, nil
 }

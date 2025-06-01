@@ -1,18 +1,26 @@
 package application
 
 import (
+	"uala-tweets/internal/domain"
+	"uala-tweets/internal/ports/publishers"
 	"uala-tweets/internal/ports/repositories"
 )
 
 type FollowService struct {
 	userRepo   repositories.UserRepository
 	followRepo repositories.FollowRepository
+	followPub  publishers.FollowPublisher
 }
 
-func NewFollowService(userRepo repositories.UserRepository, followRepo repositories.FollowRepository) *FollowService {
+func NewFollowService(
+	userRepo repositories.UserRepository,
+	followRepo repositories.FollowRepository,
+	followPub publishers.FollowPublisher,
+) *FollowService {
 	return &FollowService{
 		userRepo:   userRepo,
 		followRepo: followRepo,
+		followPub:  followPub,
 	}
 }
 
@@ -45,7 +53,22 @@ func (s *FollowService) Follow(followerID, followedID int) error {
 		return NewErrAlreadyFollowing(followerID, followedID)
 	}
 
-	return s.followRepo.Follow(followerID, followedID)
+	if err := s.followRepo.Follow(followerID, followedID); err != nil {
+		return err
+	}
+
+	// Publish follow event
+	event := domain.FollowEvent{
+		FollowerID: followerID,
+		FollowedID: followedID,
+		Following:  true,
+	}
+	if err := s.followPub.PublishFollowEvent(event); err != nil {
+		// Log the error but don't fail the operation
+		// The system can still function without the event being published
+	}
+
+	return nil
 }
 
 func (s *FollowService) Unfollow(followerID, followedID int) error {
@@ -73,7 +96,22 @@ func (s *FollowService) Unfollow(followerID, followedID int) error {
 		return NewErrNotFollowing(followerID, followedID)
 	}
 
-	return s.followRepo.Unfollow(followerID, followedID)
+	if err := s.followRepo.Unfollow(followerID, followedID); err != nil {
+		return err
+	}
+
+	// Publish unfollow event
+	event := domain.FollowEvent{
+		FollowerID: followerID,
+		FollowedID: followedID,
+		Following:  false,
+	}
+	if err := s.followPub.PublishFollowEvent(event); err != nil {
+		// Log the error but don't fail the operation
+		// The system can still function without the event being published
+	}
+
+	return nil
 }
 
 func (s *FollowService) IsFollowing(followerID, followedID int) (bool, error) {

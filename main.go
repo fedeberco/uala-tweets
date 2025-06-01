@@ -31,17 +31,24 @@ func main() {
 	// --- Kafka Writers ---
 	tweetsWriter := initKafkaWriter("tweets.created")
 	fanoutWriter := initKafkaWriter("timeline.fanout")
+	followWriter := initKafkaWriter("user.follow")
 	defer tweetsWriter.Close()
 	defer fanoutWriter.Close()
+	defer followWriter.Close()
 
 	// --- Repository and Publisher Initialization ---
 	userRepo, followRepo, tweetRepo := initRepositories(db)
 	tweetPub := adapters_publishers.NewKafkaTweetPublisher(tweetsWriter)
 	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(fanoutWriter)
+	followPub := adapters_publishers.NewKafkaFollowPublisher(followWriter)
 
 	// --- Kafka Readers ---
-	kafkaReader := initKafkaReader()
+	tweetCreateKafkaReader := initKafkaTweetCreateReader()
 	fanoutKafkaReader := initKafkaFanoutReader()
+	followKafkaReader := initKafkaFollowReader()
+	defer tweetCreateKafkaReader.Close()
+	defer fanoutKafkaReader.Close()
+	defer followKafkaReader.Close()
 
 	// --- Redis and Timeline Cache ---
 	redisClient := redis.NewClient(&redis.Options{
@@ -51,12 +58,14 @@ func main() {
 	})
 	timelineCache := adapters_redis.NewTimelineCacheRedis(redisClient)
 
-	// --- Start Kafka Consumers ---
-	startTweetConsumer(kafkaReader, tweetRepo, fanoutPub, followRepo)
-	startFanoutConsumer(fanoutKafkaReader, timelineCache, followRepo)
+	// --- Start Consumers ---
+	ctx := context.Background()
+	go startTweetConsumer(ctx, tweetCreateKafkaReader, tweetRepo, fanoutPub, followRepo)
+	go startFanoutConsumer(ctx, fanoutKafkaReader, timelineCache, followRepo)
+	go startFollowConsumer(ctx, followKafkaReader, timelineCache, tweetRepo)
 
 	// --- Services and Handlers ---
-	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub)
+	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub, followPub)
 	followHandler, userHandler, tweetHandler, timelineHandler := initHandlers(userService, followService, tweetService)
 
 	// --- HTTP Server ---
@@ -112,7 +121,7 @@ func initKafkaWriter(topic string) *kafka.Writer {
 	}
 }
 
-func initKafkaReader() *kafka.Reader {
+func initKafkaTweetCreateReader() *kafka.Reader {
 	broker := os.Getenv("KAFKA_BROKER")
 	if broker == "" {
 		broker = "localhost:29092"
@@ -136,6 +145,19 @@ func initKafkaFanoutReader() *kafka.Reader {
 	})
 }
 
+func initKafkaFollowReader() *kafka.Reader {
+	broker := getEnv("KAFKA_BROKER", "localhost:9092")
+	groupID := getEnv("KAFKA_GROUP_ID", "timeline-follow-consumer-group")
+
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  []string{broker},
+		GroupID:  groupID,
+		Topic:    "user.follow",
+		MinBytes: 10,   // 10KB
+		MaxBytes: 10e6, // 10MB
+	})
+}
+
 func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRepository, repoports.TweetRepository) {
 	userRepo := adapters_repositories.NewPostgreSQLUserRepository(db)
 	followRepo := adapters_repositories.NewPostgreSQLFollowRepository(db)
@@ -143,34 +165,46 @@ func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRep
 	return userRepo, followRepo, tweetRepo
 }
 
-func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository, fanoutPub pubports.TimelineFanoutPublisher, followRepo repoports.FollowRepository) {
+func startTweetConsumer(ctx context.Context, reader *kafka.Reader, tweetRepo repoports.TweetRepository, fanoutPub pubports.TimelineFanoutPublisher, followRepo repoports.FollowRepository) {
 	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo, fanoutPub, followRepo)
-	go func() {
-		log.Println("KafkaTweetConsumer started...")
-		if err := consumer.Start(context.Background()); err != nil {
-			log.Printf("KafkaTweetConsumer error: %v", err)
-		}
-	}()
+	if err := consumer.Start(ctx); err != nil {
+		log.Printf("Error starting tweet consumer: %v", err)
+	}
 }
 
-func startFanoutConsumer(reader *kafka.Reader, timelineCache repoports.TimelineCache, followRepo repoports.FollowRepository) {
-	consumer := adapters_consumers.NewKafkaTimelineFanoutConsumer(reader, timelineCache, followRepo)
-	go func() {
-		log.Println("KafkaTimelineFanoutConsumer started...")
-		if err := consumer.Start(context.Background()); err != nil {
-			log.Printf("KafkaTimelineFanoutConsumer error: %v", err)
-		}
-	}()
+func startFanoutConsumer(ctx context.Context, reader *kafka.Reader, timelineCache repoports.TimelineCache, followRepo repoports.FollowRepository) {
+	fanoutConsumer := adapters_consumers.NewKafkaTimelineFanoutConsumer(reader, timelineCache, followRepo)
+	if err := fanoutConsumer.Start(ctx); err != nil {
+		log.Printf("Error starting fanout consumer: %v", err)
+	}
 }
 
-func initServices(userRepo repoports.UserRepository, followRepo repoports.FollowRepository, tweetRepo repoports.TweetRepository, tweetPub pubports.TweetPublisher) (*application.UserService, *application.FollowService, *application.TweetService) {
+func startFollowConsumer(ctx context.Context, reader *kafka.Reader, timelineCache repoports.TimelineCache, tweetRepo repoports.TweetRepository) {
+	followConsumer := adapters_consumers.NewKafkaFollowConsumer(reader, timelineCache, tweetRepo)
+	if err := followConsumer.Start(ctx); err != nil {
+		log.Printf("Error starting follow consumer: %v", err)
+	}
+}
+
+func initServices(
+	userRepo repoports.UserRepository,
+	followRepo repoports.FollowRepository,
+	tweetRepo repoports.TweetRepository,
+	tweetPub pubports.TweetPublisher,
+	followPub pubports.FollowPublisher,
+) (*application.UserService, *application.FollowService, *application.TweetService) {
 	userService := application.NewUserService(userRepo)
-	followService := application.NewFollowService(userRepo, followRepo)
+	followService := application.NewFollowService(userRepo, followRepo, followPub)
 	tweetService := application.NewTweetService(tweetRepo, tweetPub)
+
 	return userService, followService, tweetService
 }
 
-func initHandlers(userService *application.UserService, followService *application.FollowService, tweetService *application.TweetService) (followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler, timelineHandler *handlers.TimelineHandler) {
+func initHandlers(
+	userService *application.UserService,
+	followService *application.FollowService,
+	tweetService *application.TweetService,
+) (followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler, timelineHandler *handlers.TimelineHandler) {
 	followHandler = handlers.NewFollowHandler(followService)
 	userHandler = handlers.NewUserHandler(userService)
 	tweetHandler = handlers.NewTweetHandler(tweetService)

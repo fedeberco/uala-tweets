@@ -49,3 +49,11 @@ func (r *TimelineCacheRedis) ClearTimeline(userID int) error {
 	key := timelineKey(userID)
 	return r.client.Del(ctx, key).Err()
 }
+
+func (r *TimelineCacheRedis) RemoveFromTimeline(userID int, tweetID int64) error {
+	ctx := context.Background()
+	key := timelineKey(userID)
+	// Remove all occurrences of the tweetID from the list
+	// Using LREM with count=0 removes all occurrences
+	return r.client.LRem(ctx, key, 0, tweetID).Err()
+}
