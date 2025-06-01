@@ -28,6 +28,11 @@ func (m *MockTimelineCache) ClearTimeline(userID int) error {
 	return args.Error(0)
 }
 
+func (m *MockTimelineCache) RemoveFromTimeline(userID int, tweetID int64) error {
+	args := m.Called(userID, tweetID)
+	return args.Error(0)
+}
+
 func TestTimelineService_AddTweet(t *testing.T) {
 	mockCache := new(MockTimelineCache)
 	service := NewTimelineService(mockCache)
