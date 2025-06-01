@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 	"uala-tweets/internal/domain"
 	"uala-tweets/internal/ports/publishers"
@@ -16,17 +15,23 @@ var (
 )
 
 type TweetService struct {
-	tweetRepo repositories.TweetRepository
-	tweetPub  publishers.TweetPublisher
+	tweetRepo  repositories.TweetRepository
+	tweetPub   publishers.TweetPublisher
+	fanoutPub  publishers.TimelineFanoutPublisher
+	followRepo repositories.FollowRepository
 }
 
 func NewTweetService(
 	tweetRepo repositories.TweetRepository,
 	tweetPub publishers.TweetPublisher,
+	fanoutPub publishers.TimelineFanoutPublisher,
+	followRepo repositories.FollowRepository,
 ) *TweetService {
 	return &TweetService{
-		tweetRepo: tweetRepo,
-		tweetPub:  tweetPub,
+		tweetRepo:  tweetRepo,
+		tweetPub:   tweetPub,
+		fanoutPub:  fanoutPub,
+		followRepo: followRepo,
 	}
 }
 
@@ -50,12 +55,9 @@ func (s *TweetService) CreateTweet(ctx context.Context, input CreateTweetInput) 
 		CreatedAt: time.Now(),
 	}
 
-	// Store synchronously
-	if err := s.tweetRepo.Create(tweet); err != nil {
-		return nil, fmt.Errorf("failed to create tweet: %w", err)
-	}
+	// Timeline fanout event is now published by the Kafka consumer after persistence.
 
-	// Publish asynchronously
+	// Publish tweet asynchronously
 	go func(tweet *domain.Tweet) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

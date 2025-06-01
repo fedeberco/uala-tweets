@@ -9,8 +9,8 @@ import (
 
 	adapters_consumers "uala-tweets/internal/adapters/consumers"
 	adapters_publishers "uala-tweets/internal/adapters/publishers"
-	adapters_repositories "uala-tweets/internal/adapters/repositories"
 	adapters_redis "uala-tweets/internal/adapters/redis"
+	adapters_repositories "uala-tweets/internal/adapters/repositories"
 	"uala-tweets/internal/application"
 	"uala-tweets/internal/interfaces/handlers"
 
@@ -19,8 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
-	"github.com/segmentio/kafka-go"
 	"github.com/redis/go-redis/v9"
+	"github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -30,14 +30,32 @@ func main() {
 	kafkaWriter := initKafkaWriter()
 	defer kafkaWriter.Close()
 
-	kafkaReader := initKafkaReader()
-
+	// --- Repositories and Publishers Initialization ---
 	userRepo, followRepo, tweetRepo := initRepositories(db)
 	tweetPub := adapters_publishers.NewKafkaTweetPublisher(kafkaWriter)
+	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(kafkaWriter)
 
-	startTweetConsumer(kafkaReader, tweetRepo)
+	// --- Consumers Initialization ---
+	kafkaReader := initKafkaReader()
+	fanoutKafkaReader := initKafkaFanoutReader()
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		Password: "",
+		DB:       0,
+	})
+	timelineCache := adapters_redis.NewTimelineCacheRedis(redisClient)
 
-	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub)
+	// Start consumers together
+	go startTweetConsumer(kafkaReader, tweetRepo, fanoutPub)
+	fanoutConsumer := adapters_consumers.NewKafkaTimelineFanoutConsumer(fanoutKafkaReader, timelineCache, followRepo)
+	go func() {
+		if err := fanoutConsumer.Start(context.Background()); err != nil {
+			log.Printf("[ERROR] Timeline fanout consumer exited: %v", err)
+		}
+	}()
+
+	tweetService := application.NewTweetService(tweetRepo, tweetPub, fanoutPub, followRepo)
+	userService, followService, _ := initServices(userRepo, followRepo, tweetRepo, tweetPub)
 	followHandler, userHandler, tweetHandler, timelineHandler := initHandlers(userService, followService, tweetService)
 
 	r := setupRouter(followHandler, userHandler, tweetHandler, timelineHandler)
@@ -97,6 +115,14 @@ func initKafkaReader() *kafka.Reader {
 	})
 }
 
+func initKafkaFanoutReader() *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   "timeline.fanout",
+		GroupID: "timeline-fanout-consumer-group",
+	})
+}
+
 func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRepository, repoports.TweetRepository) {
 	userRepo := adapters_repositories.NewPostgreSQLUserRepository(db)
 	followRepo := adapters_repositories.NewPostgreSQLFollowRepository(db)
@@ -104,8 +130,8 @@ func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRep
 	return userRepo, followRepo, tweetRepo
 }
 
-func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository) {
-	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo)
+func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository, fanoutPub pubports.TimelineFanoutPublisher) {
+	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo, fanoutPub)
 	go func() {
 		log.Println("KafkaTweetConsumer started...")
 		if err := consumer.Start(context.Background()); err != nil {
