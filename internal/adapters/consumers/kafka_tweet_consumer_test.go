@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"uala-tweets/internal/domain"
 
@@ -50,6 +51,15 @@ func (m *MockTweetRepository) GetByUserID(userID int64) ([]*domain.Tweet, error)
 	return nil, args.Error(1)
 }
 
+
+func (m *MockTweetRepository) GetTweetIDsByUser(userID int) ([]int64, error) {
+	args := m.Called(userID)
+	if tweetIDs, ok := args.Get(0).([]int64); ok {
+		return tweetIDs, args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
 func TestKafkaTweetConsumer_Start(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -91,7 +101,7 @@ func TestKafkaTweetConsumer_Start(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockReader := &MockKafkaReader{msg: kafka.Message{Value: tc.msgValue}}
+			mockReader := NewMockKafkaReader(kafka.Message{Value: tc.msgValue})
 			mockRepo := new(MockTweetRepository)
 			tc.setupRepoMock(mockRepo)
 
@@ -99,9 +109,36 @@ func TestKafkaTweetConsumer_Start(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			err := consumer.Start(ctx)
-			assert.Error(t, err)
+			// Start the consumer in a goroutine
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- consumer.Start(ctx)
+			}()
+
+			// Wait for the consumer to process the message
+			mockReader.WaitForRead()
+
+			// Give some time for the consumer to process the message
+			time.Sleep(10 * time.Millisecond)
+
+			// Verify the assertions
 			tc.assertions(t, mockRepo)
+
+			// Cancel the context to stop the consumer
+			cancel()
+
+
+			// Check for errors with a timeout
+			select {
+			case err := <-errCh:
+				if tc.name == "repo returns error" {
+					assert.Error(t, err)
+				} else {
+					assert.ErrorIs(t, err, context.Canceled)
+				}
+			case <-time.After(100 * time.Millisecond):
+				t.Fatal("Timed out waiting for consumer to stop")
+			}
 		})
 	}
 }

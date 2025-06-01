@@ -50,7 +50,7 @@ func (r *PostgreSQLTweetRepository) GetByID(id int64) (*domain.Tweet, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, sql.ErrNoRows
 	}
 
 	return tweet, err

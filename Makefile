@@ -67,11 +67,31 @@ install-deps:
 	@echo "Installing dependencies..."
 	@go mod download
 
+## Start test environment
+test-env-up:
+	@echo "Starting test environment..."
+	@docker compose -f docker-compose.test.yml up -d
+	@echo "Waiting for test database to be ready..."
+	@until docker compose -f docker-compose.test.yml exec -T testdb pg_isready -U postgres; do \
+		echo "Waiting for PostgreSQL..."; \
+		sleep 2; \
+	done
+
+## Stop test environment
+test-env-down:
+	@echo "Stopping test environment..."
+	@docker compose -f docker-compose.test.yml down
+
 ## Run tests locally
-test-local:
+test-local: test-env-up
 	@echo "Running tests..."
-	@go test -v -coverprofile=coverage.out ./...
-	@go tool cover -func=coverage.out | grep total
+	@TEST_DB_HOST=localhost \
+	 TEST_DB_PORT=5433 \
+	 TEST_DB_USER=postgres \
+	 TEST_DB_PASSWORD=postgres \
+	 TEST_DB_NAME=testdb \
+	 go test -v ./...
+	@make test-env-down
 
 ## Build the application
 build:
