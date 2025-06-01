@@ -24,20 +24,26 @@ import (
 )
 
 func main() {
+	// --- Database ---
 	db := mustSetupDatabase()
 	defer db.Close()
 
-	kafkaWriter := initKafkaWriter()
-	defer kafkaWriter.Close()
+	// --- Kafka Writers ---
+	tweetsWriter := initKafkaWriter("tweets.created")
+	fanoutWriter := initKafkaWriter("timeline.fanout")
+	defer tweetsWriter.Close()
+	defer fanoutWriter.Close()
 
-	// --- Repositories and Publishers Initialization ---
+	// --- Repository and Publisher Initialization ---
 	userRepo, followRepo, tweetRepo := initRepositories(db)
-	tweetPub := adapters_publishers.NewKafkaTweetPublisher(kafkaWriter)
-	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(kafkaWriter)
+	tweetPub := adapters_publishers.NewKafkaTweetPublisher(tweetsWriter)
+	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(fanoutWriter)
 
-	// --- Consumers Initialization ---
+	// --- Kafka Readers ---
 	kafkaReader := initKafkaReader()
 	fanoutKafkaReader := initKafkaFanoutReader()
+
+	// --- Redis and Timeline Cache ---
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		Password: "",
@@ -45,21 +51,16 @@ func main() {
 	})
 	timelineCache := adapters_redis.NewTimelineCacheRedis(redisClient)
 
-	// Start consumers together
-	go startTweetConsumer(kafkaReader, tweetRepo, fanoutPub)
-	fanoutConsumer := adapters_consumers.NewKafkaTimelineFanoutConsumer(fanoutKafkaReader, timelineCache, followRepo)
-	go func() {
-		if err := fanoutConsumer.Start(context.Background()); err != nil {
-			log.Printf("[ERROR] Timeline fanout consumer exited: %v", err)
-		}
-	}()
+	// --- Start Kafka Consumers ---
+	startTweetConsumer(kafkaReader, tweetRepo, fanoutPub, followRepo)
+	startFanoutConsumer(fanoutKafkaReader, timelineCache, followRepo)
 
-	tweetService := application.NewTweetService(tweetRepo, tweetPub, fanoutPub, followRepo)
-	userService, followService, _ := initServices(userRepo, followRepo, tweetRepo, tweetPub)
+	// --- Services and Handlers ---
+	userService, followService, tweetService := initServices(userRepo, followRepo, tweetRepo, tweetPub)
 	followHandler, userHandler, tweetHandler, timelineHandler := initHandlers(userService, followService, tweetService)
 
+	// --- HTTP Server ---
 	r := setupRouter(followHandler, userHandler, tweetHandler, timelineHandler)
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -96,10 +97,10 @@ func mustSetupDatabase() *sql.DB {
 	return db
 }
 
-func initKafkaWriter() *kafka.Writer {
+func initKafkaWriter(topic string) *kafka.Writer {
 	return &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092"),
-		Topic:        "tweets.created",
+		Topic:        topic,
 		Balancer:     &kafka.LeastBytes{},
 		RequiredAcks: kafka.RequireOne,
 		Async:        false,
@@ -130,12 +131,22 @@ func initRepositories(db *sql.DB) (repoports.UserRepository, repoports.FollowRep
 	return userRepo, followRepo, tweetRepo
 }
 
-func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository, fanoutPub pubports.TimelineFanoutPublisher) {
-	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo, fanoutPub)
+func startTweetConsumer(reader *kafka.Reader, tweetRepo repoports.TweetRepository, fanoutPub pubports.TimelineFanoutPublisher, followRepo repoports.FollowRepository) {
+	consumer := adapters_consumers.NewKafkaTweetConsumer(reader, tweetRepo, fanoutPub, followRepo)
 	go func() {
 		log.Println("KafkaTweetConsumer started...")
 		if err := consumer.Start(context.Background()); err != nil {
 			log.Printf("KafkaTweetConsumer error: %v", err)
+		}
+	}()
+}
+
+func startFanoutConsumer(reader *kafka.Reader, timelineCache repoports.TimelineCache, followRepo repoports.FollowRepository) {
+	consumer := adapters_consumers.NewKafkaTimelineFanoutConsumer(reader, timelineCache, followRepo)
+	go func() {
+		log.Println("KafkaTimelineFanoutConsumer started...")
+		if err := consumer.Start(context.Background()); err != nil {
+			log.Printf("KafkaTimelineFanoutConsumer error: %v", err)
 		}
 	}()
 }

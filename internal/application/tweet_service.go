@@ -15,23 +15,14 @@ var (
 )
 
 type TweetService struct {
-	tweetRepo  repositories.TweetRepository
-	tweetPub   publishers.TweetPublisher
-	fanoutPub  publishers.TimelineFanoutPublisher
-	followRepo repositories.FollowRepository
+	tweetRepo repositories.TweetRepository
+	tweetPub  publishers.TweetPublisher
 }
 
-func NewTweetService(
-	tweetRepo repositories.TweetRepository,
-	tweetPub publishers.TweetPublisher,
-	fanoutPub publishers.TimelineFanoutPublisher,
-	followRepo repositories.FollowRepository,
-) *TweetService {
+func NewTweetService(tweetRepo repositories.TweetRepository, tweetPub publishers.TweetPublisher) *TweetService {
 	return &TweetService{
-		tweetRepo:  tweetRepo,
-		tweetPub:   tweetPub,
-		fanoutPub:  fanoutPub,
-		followRepo: followRepo,
+		tweetRepo: tweetRepo,
+		tweetPub:  tweetPub,
 	}
 }
 
