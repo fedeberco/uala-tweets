@@ -1,74 +1,183 @@
-# ------ GO
-build:
-	go build -o bin/uala-tweets
+# ==============================================================================
+# Makefile for uala-tweets
+# 
+# Available commands:
+#   Local Development:
+#     make start-local      # Start all services in Docker and run app locally
+#     make run-local        # Run the application locally (assumes services are running)
+#     make test-local       # Run tests locally
+#     make install-deps     # Install Go dependencies
+#     make migrate-up-local # Run database migrations
+# 
+#   Docker Development:
+#     make start-docker     # Start all services in Docker
+#     make stop-docker      # Stop all Docker services
+#     make docker-logs      # View Docker logs
+#
+#   Database:
+#     make migrate-up       # Run migrations (Docker)
+#     make migrate-down     # Rollback last migration (Docker)
+#     make migrate-up-local # Run migrations (local)
+#     make migrate-down-local # Rollback last migration (local)
+# ==============================================================================
 
-run:
-	go mod tidy
-	DB_URL=$(DB_URL) go run main.go
+# ==============================================================================
+# Configuration
+# ==============================================================================
 
-test: test-db-up
+# Database configuration
+DB_HOST ?= localhost
+DB_PORT ?= 5432
+DB_NAME ?= uala_tweets
+DB_USER ?= uala
+DB_PASS ?= ualapass
+DB_SSLMODE ?= disable
+DB_URL=postgres://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
+
+# Application configuration
+APP_NAME := uala-tweets
+APP_PORT ?= 8080
+
+# ==============================================================================
+# Local Development
+# ==============================================================================
+
+## Start all services in Docker and run the application locally
+start-local: docker-up migrate-up
+	@echo "Starting all services in Docker..."
+	@echo "\nStarting $(APP_NAME) locally on port 8000..."
+	@echo "\nTo stop services, run: make stop-docker\n"
+	@echo "Application will be available at: http://localhost:8000\n"
+	@DB_URL="$(DB_URL)" \
+	 REDIS_ADDR="localhost:6379" \
+	 KAFKA_BROKER="localhost:29092" \
+	 PORT=8000 \
+	 go run main.go
+
+## Run the application locally (assumes services are already running)
+run-local: install-deps
+	@echo "Starting $(APP_NAME) locally..."
+	@DB_URL="$(DB_URL)" \
+	 REDIS_ADDR="localhost:6379" \
+	 KAFKA_BROKER="localhost:29092" \
+	 go run main.go
+
+## Install Go dependencies
+install-deps:
+	@echo "Installing dependencies..."
+	@go mod download
+
+## Run tests locally
+test-local:
 	@echo "Running tests..."
-	go test -v ./...
+	@go test -v -coverprofile=coverage.out ./...
+	@go tool cover -func=coverage.out | grep total
 
-cover: test-db-up
-	@echo "Running tests with coverage..."
-	go test -v -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
+## Build the application
+build:
+	@echo "Building $(APP_NAME)..."
+	@go build -o bin/$(APP_NAME)
 
+## Clean build artifacts
 clean:
-	rm -rf bin/ coverage.out coverage.html
+	@echo "Cleaning..."
+	@rm -rf bin/ coverage.out coverage.html
 
-deps:
-	go mod download
+# ==============================================================================
+# Database Migrations (Local)
+# ==============================================================================
 
-# ------ /GO
-
-
-# ------ DATABASE
-# Database URL for migrations
-DB_URL=postgres://uala:ualapass@localhost:5432/uala_tweets?sslmode=disable
-
-# Test database management
-test-db-up:
-	@echo "Starting test database..."
-	@docker compose -f docker-compose.test.yml up -d
-	@echo "Waiting for database to be ready..."
-	@sleep 2
-
-# Migration commands using Docker
-migrate-up: up
+## Run database migrations locally
+migrate-up-local:
 	@echo "Running migrations..."
-	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose up
+	@migrate -path ./db/migrations -database "$(DB_URL)" up
 
-migrate-down: up
+## Rollback the last migration locally
+migrate-down-local:
 	@echo "Rolling back last migration..."
-	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down
+	@migrate -path ./db/migrations -database "$(DB_URL)" down
 
-migrate-down-all: up
+## Rollback all migrations locally
+migrate-down-all-local:
 	@echo "Rolling back all migrations..."
-	@docker run --rm -v $(shell pwd)/db/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DB_URL)" -verbose down -all
+	@migrate -path ./db/migrations -database "$(DB_URL)" down -all
 
-# ------ /DATABASE
+# ==============================================================================
+# Docker Development
+# ==============================================================================
 
-# ------ DOCKER
-# Docker Compose commands
-up:
-	docker compose up -d
+## Start all services in Docker
+start-docker: docker-up migrate-up
+	@echo "\n$(APP_NAME) is now running at http://localhost:8081"
+	@echo "\nTo stop the services, run: make stop-docker\n"
 
-down:
-	docker compose down
+## Stop all Docker services
+stop-docker: docker-down
 
-logs:
-	docker compose logs -f
+## View Docker logs
+docker-logs:
+	@docker compose logs -f
 
-ps:
-	docker compose ps
-# ------/DOCKER
+# ==============================================================================
+# Docker Compose Commands
+# ==============================================================================
 
-# Start everything
-start: up migrate-up run
+## Build Docker images
+docker-build:
+	@docker compose build
 
-# Stop everything
-stop: down
+## Start services in detached mode
+docker-up:
+	@docker compose up -d
 
-.PHONY: build run test cover test-db-up clean deps migrate-up migrate-down migrate-down-all up down logs ps start stop
+## Stop and remove containers
+docker-down:
+	@docker compose down
+
+## Restart all services
+docker-restart: docker-down docker-up
+
+# ==============================================================================
+# Database Migrations (Docker)
+# ==============================================================================
+
+## Run database migrations (Docker)
+migrate-up:
+	@echo "Running migrations in Docker..."
+	@docker run --rm -v $(shell pwd)/db/migrations:/migrations \
+		--network host migrate/migrate \
+		-path=/migrations \
+		-database "$(DB_URL)" \
+		-verbose up
+
+## Rollback last migration (Docker)
+migrate-down:
+	@docker run --rm -v $(shell pwd)/db/migrations:/migrations \
+		--network host migrate/migrate \
+		-path=/migrations \
+		-database "$(DB_URL)" \
+		-verbose down
+
+## Rollback all migrations (Docker)
+migrate-down-all:
+	@docker run --rm -v $(shell pwd)/db/migrations:/migrations \
+		--network host migrate/migrate \
+		-path=/migrations \
+		-database "$(DB_URL)" \
+		-verbose down -all
+
+# ==============================================================================
+# Help
+# ==============================================================================
+
+## Show this help
+help:
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.DEFAULT_GOAL := help
+
+.PHONY: help run-local install-deps test-local build clean \
+        migrate-up-local migrate-down-local migrate-down-all-local \
+        start-docker stop-docker docker-logs \
+        docker-build docker-up docker-down docker-restart \
+        migrate-up migrate-down migrate-down-all

@@ -98,8 +98,12 @@ func mustSetupDatabase() *sql.DB {
 }
 
 func initKafkaWriter(topic string) *kafka.Writer {
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:29092"
+	}
 	return &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092"),
+		Addr:         kafka.TCP(broker),
 		Topic:        topic,
 		Balancer:     &kafka.LeastBytes{},
 		RequiredAcks: kafka.RequireOne,
@@ -109,18 +113,26 @@ func initKafkaWriter(topic string) *kafka.Writer {
 }
 
 func initKafkaReader() *kafka.Reader {
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:29092"
+	}
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092"},
+		Brokers: []string{broker},
 		Topic:   "tweets.created",
 		GroupID: "tweet-consumer-group",
 	})
 }
 
 func initKafkaFanoutReader() *kafka.Reader {
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:29092"
+	}
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092"},
+		Brokers: []string{broker},
 		Topic:   "timeline.fanout",
-		GroupID: "timeline-fanout-consumer-group",
+		GroupID: "fanout-consumer-group",
 	})
 }
 
