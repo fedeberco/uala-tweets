@@ -46,9 +46,7 @@ func (s *TweetService) CreateTweet(ctx context.Context, input CreateTweetInput) 
 		CreatedAt: time.Now(),
 	}
 
-	// Timeline fanout event is now published by the Kafka consumer after persistence.
-
-	// Publish tweet asynchronously
+	// Publish tweet asynchronously (event-driven persistence)
 	go func(tweet *domain.Tweet) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

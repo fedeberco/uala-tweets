@@ -40,6 +40,15 @@ type MockTweetPublisher struct {
 	mock.Mock
 }
 
+type MockTimelineFanoutPublisher struct {
+	mock.Mock
+}
+
+func (m *MockTimelineFanoutPublisher) PublishFanoutEvent(ctx context.Context, event *domain.TimelineFanoutEvent) error {
+	args := m.Called(ctx, event)
+	return args.Error(0)
+}
+
 func (m *MockTweetPublisher) Publish(ctx context.Context, tweet *domain.Tweet) error {
 	args := m.Called(ctx, tweet)
 	return args.Error(0)
@@ -59,7 +68,6 @@ func TestTweetService_CreateTweet(t *testing.T) {
 				Content: "Hello, world!",
 			},
 			mockSetup: func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {
-				repo.On("Create", mock.AnythingOfType("*domain.Tweet")).Return(nil)
 				wg.Add(1)
 				pub.On("Publish", mock.Anything, mock.AnythingOfType("*domain.Tweet")).
 					Run(func(args mock.Arguments) { wg.Done() }).
@@ -91,18 +99,6 @@ func TestTweetService_CreateTweet(t *testing.T) {
 				pub.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
 			expectedError: "tweet content is too long",
-		},
-		{
-			name: "repository error",
-			input: application.CreateTweetInput{
-				UserID:  1,
-				Content: "Hello, error!",
-			},
-			mockSetup: func(repo *MockTweetRepository, pub *MockTweetPublisher, wg *sync.WaitGroup) {
-				repo.On("Create", mock.AnythingOfType("*domain.Tweet")).Return(errors.New("database error"))
-				pub.On("Publish", mock.Anything, mock.Anything).Return(nil)
-			},
-			expectedError: "failed to create tweet: database error",
 		},
 	}
 
@@ -140,7 +136,6 @@ func TestTweetService_CreateTweet(t *testing.T) {
 				assert.Equal(t, tt.input.Content, tweet.Content)
 				assert.False(t, tweet.CreatedAt.IsZero())
 
-				mockRepo.AssertExpectations(t)
 				mockPub.AssertExpectations(t)
 			}
 		})
@@ -267,9 +262,11 @@ func TestTweetService_GetUserTweets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockTweetRepository)
+			mockPub := new(MockTweetPublisher)
+
 			tt.setupMock(mockRepo)
 
-			service := application.NewTweetService(mockRepo, nil)
+			service := application.NewTweetService(mockRepo, mockPub)
 
 			tweets, err := service.GetUserTweets(context.Background(), tt.userID)
 

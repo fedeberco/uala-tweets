@@ -46,3 +46,11 @@ func (m *MockFollowRepository) IsFollowing(followerID, followedID int) (bool, er
 	args := m.Called(followerID, followedID)
 	return args.Bool(0), args.Error(1)
 }
+
+func (m *MockFollowRepository) GetFollowers(userID int) ([]int, error) {
+	args := m.Called(userID)
+	if ids, ok := args.Get(0).([]int); ok {
+		return ids, args.Error(1)
+	}
+	return nil, args.Error(1)
+}

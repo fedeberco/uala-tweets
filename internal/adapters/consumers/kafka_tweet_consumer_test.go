@@ -13,21 +13,16 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-type MockKafkaReader struct {
-	mock.Mock
-	msg       kafka.Message
-	readCount int
-}
 
-func (m *MockKafkaReader) ReadMessage(ctx context.Context) (kafka.Message, error) {
-	m.readCount++
-	if m.readCount == 1 {
-		return m.msg, nil
-	}
-	return kafka.Message{}, errors.New("no more messages")
-}
+// MockFollowRepository mocks the FollowRepository interface for injection in tests.
 
-func (m *MockKafkaReader) Close() error { return nil }
+// MockTimelineFanoutPublisher mocks the TimelineFanoutPublisher interface
+// for injection into KafkaTweetConsumer during tests.
+type MockTimelineFanoutPublisher struct{}
+
+func (m *MockTimelineFanoutPublisher) PublishFanoutEvent(ctx context.Context, event *domain.TimelineFanoutEvent) error {
+	return nil
+}
 
 // MockTweetRepository mocks the TweetRepository interface
 type MockTweetRepository struct {
@@ -100,7 +95,7 @@ func TestKafkaTweetConsumer_Start(t *testing.T) {
 			mockRepo := new(MockTweetRepository)
 			tc.setupRepoMock(mockRepo)
 
-			consumer := NewKafkaTweetConsumer(mockReader, mockRepo)
+			consumer := NewKafkaTweetConsumer(mockReader, mockRepo, &MockTimelineFanoutPublisher{}, &MockFollowRepository{})
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 

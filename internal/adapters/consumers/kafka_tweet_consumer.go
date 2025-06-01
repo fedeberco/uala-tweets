@@ -58,7 +58,7 @@ func (c *KafkaTweetConsumer) Start(ctx context.Context) error {
 		}
 		userIDs := append([]int{int(tweet.UserID)}, followers...)
 		for _, userID := range userIDs {
-			go func(uid int) {
+			func(uid int) {
 				event := &domain.TimelineFanoutEvent{
 					TweetID: tweet.ID,
 					UserID:  uid,
