@@ -4,10 +4,8 @@
 # Available commands:
 #   Local Development:
 #     make start-local      # Start all services in Docker and run app locally
-#     make run-local        # Run the application locally (assumes services are running)
 #     make test-local       # Run tests locally
 #     make install-deps     # Install Go dependencies
-#     make migrate-up-local # Run database migrations
 # 
 #   Docker Development:
 #     make start-docker     # Start all services in Docker
@@ -17,8 +15,6 @@
 #   Database:
 #     make migrate-up       # Run migrations (Docker)
 #     make migrate-down     # Rollback last migration (Docker)
-#     make migrate-up-local # Run migrations (local)
-#     make migrate-down-local # Rollback last migration (local)
 # ==============================================================================
 
 # ==============================================================================
@@ -52,14 +48,6 @@ start-local: docker-up migrate-up
 	 REDIS_ADDR="localhost:6379" \
 	 KAFKA_BROKER="localhost:29092" \
 	 PORT=8000 \
-	 go run main.go
-
-## Run the application locally (assumes services are already running)
-run-local: install-deps
-	@echo "Starting $(APP_NAME) locally..."
-	@DB_URL="$(DB_URL)" \
-	 REDIS_ADDR="localhost:6379" \
-	 KAFKA_BROKER="localhost:29092" \
 	 go run main.go
 
 ## Install Go dependencies
@@ -103,24 +91,7 @@ clean:
 	@echo "Cleaning..."
 	@rm -rf bin/ coverage.out coverage.html
 
-# ==============================================================================
-# Database Migrations (Local)
-# ==============================================================================
 
-## Run database migrations locally
-migrate-up-local:
-	@echo "Running migrations..."
-	@migrate -path ./db/migrations -database "$(DB_URL)" up
-
-## Rollback the last migration locally
-migrate-down-local:
-	@echo "Rolling back last migration..."
-	@migrate -path ./db/migrations -database "$(DB_URL)" down
-
-## Rollback all migrations locally
-migrate-down-all-local:
-	@echo "Rolling back all migrations..."
-	@migrate -path ./db/migrations -database "$(DB_URL)" down -all
 
 # ==============================================================================
 # Docker Development
@@ -197,7 +168,6 @@ help:
 .DEFAULT_GOAL := help
 
 .PHONY: help run-local install-deps test-local build clean \
-        migrate-up-local migrate-down-local migrate-down-all-local \
         start-docker stop-docker docker-logs \
         docker-build docker-up docker-down docker-restart \
         migrate-up migrate-down migrate-down-all
