@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 	"uala-tweets/internal/domain"
 	"uala-tweets/internal/ports/publishers"
@@ -35,39 +36,73 @@ func NewKafkaTweetConsumer(reader KafkaReader, tweetRepo repositories.TweetRepos
 
 // Start starts the consumer loop. It should be run as a goroutine.
 func (c *KafkaTweetConsumer) Start(ctx context.Context) error {
+	log.Println("Starting Tweet consumer...")
+	defer log.Println("Tweet consumer stopped")
+
 	for {
 		m, err := c.reader.ReadMessage(ctx)
 		if err != nil {
+			log.Printf("Error reading message from Kafka: %v", err)
 			return fmt.Errorf("error reading from kafka: %w", err)
 		}
+
+		log.Printf("Received tweet message - Topic: %s, Partition: %d, Offset: %d",
+			m.Topic, m.Partition, m.Offset)
+
 		var tweet domain.Tweet
 		if err := json.Unmarshal(m.Value, &tweet); err != nil {
-			// Optionally log and skip
+			log.Printf("Error unmarshaling tweet: %v, Raw: %s", err, string(m.Value))
 			continue
 		}
+
+		log.Printf("Processing new tweet - ID: %d, UserID: %d, Content: %.50s...",
+			tweet.ID, tweet.UserID, tweet.Content)
+
+		// Persist the tweet
 		if err := c.tweetRepo.Create(&tweet); err != nil {
-			// Optionally log error
+			log.Printf("Error persisting tweet %d: %v", tweet.ID, err)
 			continue
 		}
+
+		log.Printf("Successfully persisted tweet %d, finding followers for user %d",
+			tweet.ID, tweet.UserID)
 
 		// After successful persistence, publish one fan-out event per user (author + followers)
 		followers, err := c.followRepo.GetFollowers(int(tweet.UserID))
 		if err != nil {
-			// Optionally log error
+			log.Printf("Error getting followers for user %d: %v. Will only fanout to author.",
+				tweet.UserID, err)
 			followers = []int{}
 		}
+
 		userIDs := append([]int{int(tweet.UserID)}, followers...)
+		log.Printf("Fanning out tweet %d to %d users (author + %d followers)",
+			tweet.ID, len(userIDs), len(followers))
+
 		for _, userID := range userIDs {
 			func(uid int) {
 				event := &domain.TimelineFanoutEvent{
 					TweetID: tweet.ID,
 					UserID:  uid,
 				}
+
+				log.Printf("Publishing fanout event - TweetID: %d, UserID: %d",
+					event.TweetID, event.UserID)
+
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				_ = c.fanoutPub.PublishFanoutEvent(ctx, event)
+
+				if err := c.fanoutPub.PublishFanoutEvent(ctx, event); err != nil {
+					log.Printf("Error publishing fanout event for tweet %d to user %d: %v",
+						event.TweetID, event.UserID, err)
+				} else {
+					log.Printf("Successfully published fanout event for tweet %d to user %d",
+						event.TweetID, event.UserID)
+				}
 			}(userID)
 		}
+
+		log.Printf("Completed processing tweet %d", tweet.ID)
 	}
 }
 

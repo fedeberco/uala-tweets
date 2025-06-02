@@ -30,7 +30,7 @@ func (p *KafkaFollowPublisher) PublishFollowEvent(event domain.FollowEvent) erro
 	}
 
 	msg := kafka.Message{
-		Key:   fmt.Appendf(nil, "%d", event.FollowerID),
+		Key:   fmt.Appendf(nil, "follow_%d_%d_%v", event.FollowerID, event.FollowedID, event.Following),
 		Value: data,
 	}
 

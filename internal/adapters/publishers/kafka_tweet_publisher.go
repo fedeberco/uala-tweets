@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"uala-tweets/internal/domain"
 
 	"github.com/segmentio/kafka-go"
@@ -26,11 +27,19 @@ func (p *KafkaTweetPublisher) Publish(ctx context.Context, tweet *domain.Tweet) 
 	}
 
 	msg := kafka.Message{
-		Key:   fmt.Appendf(nil, "%d", tweet.UserID),
+		Key:   fmt.Appendf(nil, "tweet_%d_%d", tweet.UserID, tweet.ID),
 		Value: data,
 	}
 
-	return p.writer.WriteMessages(ctx, msg)
+	log.Printf("Publishing tweet %d for user %d to topic %s", tweet.ID, tweet.UserID, p.writer.Topic)
+
+	if err := p.writer.WriteMessages(ctx, msg); err != nil {
+		log.Printf("Failed to publish tweet %d: %v", tweet.ID, err)
+		return fmt.Errorf("failed to publish message: %w", err)
+	}
+
+	log.Printf("Successfully published tweet %d for user %d", tweet.ID, tweet.UserID)
+	return nil
 }
 
 func (p *KafkaTweetPublisher) Close() error {
