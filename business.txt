@@ -10,6 +10,7 @@
 - Some edge cases were not addressed to keep the solution simple, such as:
   - Chronological ordering in user timelines
   - Race conditions in high-concurrency scenarios
+- Using integer IDs instead of UUIDs for simplicity, though UUIDs would be preferred in production for better scalability and security
 - Configured with a single consumer per topic for simplicity (can be easily expanded)
 - No implementation of load balancing for the application instances
 - Context propagation is not fully implemented throughout all layers (handlers → services → repositories) for simplicity, though it's a best practice for request-scoped data and cancellation
