@@ -4,7 +4,7 @@
 # Available commands:
 #   Local Development:
 #     make start-local      # Start all services in Docker and run app locally
-#     make test-local       # Run tests locally
+#     make test      # Run tests locally
 #     make install-deps     # Install Go dependencies
 #     make swagger          # Generate Swagger API documentation
 # 
@@ -79,7 +79,7 @@ test-env-down:
 	@docker compose -f docker-compose.test.yml down
 
 ## Run tests locally
-test-local: test-env-up
+test: test-env-up
 	@echo "Running tests..."
 	@TEST_DB_HOST=localhost \
 	 TEST_DB_PORT=5433 \
