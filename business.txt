@@ -8,7 +8,7 @@
 
 ## Technical Limitations
 - Some edge cases were not addressed to keep the solution simple, such as:
-  - Chronological ordering in user timelines when following many users with high posting frequency
+  - Chronological ordering in user timelines
   - Race conditions in high-concurrency scenarios
 - Configured with a single consumer per topic for simplicity (can be easily expanded)
 - No implementation of load balancing for the application instances
