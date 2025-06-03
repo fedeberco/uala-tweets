@@ -18,11 +18,16 @@ A Twitter-like microservice built with Go, PostgreSQL, Redis, and Kafka.
 - Docker and Docker Compose
 - Make (optional, but recommended)
 
+## 📚 Documentation
+
+- [System Architecture](./docs/architecture.md) - High-level overview of the architecture and components.
+
 ## 🏗 Project Structure
 
 ```
 .
 ├── cmd/                  # Application entry points
+├── docs/                 # Documentation
 ├── internal/
 │   ├── adapters/         # External implementations (DB, Kafka, etc.)
 │   ├── application/      # Business logic and use cases

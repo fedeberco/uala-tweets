@@ -1,0 +1,33 @@
+# Business and Technical Assumptions
+
+## Development Approach
+- Worked without feature branches to simplify development, considering this is a small project
+- Focused on local development and Docker for easier setup and testing
+- Did not implement multiple environments (prod, staging, test) to keep the exercise simple
+- CI/CD pipeline was not set up for simplicity, but in a production environment, GitHub Actions would be used to run tests on PRs and block merges if tests fail
+
+## Technical Limitations
+- Some edge cases were not addressed to keep the solution simple, such as:
+  - Chronological ordering in user timelines when following many users with high posting frequency
+  - Race conditions in high-concurrency scenarios
+- Configured with a single consumer per topic for simplicity (can be easily expanded)
+- No implementation of load balancing for the application instances
+- Context propagation is not fully implemented throughout all layers (handlers → services → repositories) for simplicity, though it's a best practice for request-scoped data and cancellation
+
+## Testing
+- Due to time constraints, end-to-end (e2e) tests were not implemented
+- Focused on unit and integration tests for core functionality
+
+## Infrastructure
+- Used local development setup with Docker for simplicity
+- Did not use cloud services (like AWS) to keep the solution lightweight and easy to run locally
+- PostgreSQL was chosen as the primary database for its reliability and ACID compliance
+- All user timelines are stored in Redis for fast read access and efficient timeline generation
+- Kafka was implemented for handling asynchronous events (tweet creation, follows, etc.)
+
+## Future Improvements
+- Add monitoring and logging for better observability
+- Implement rate limiting for API endpoints
+- Add authentication and authorization
+- Implement proper error handling and retry mechanisms for Kafka consumers
+- Add more comprehensive test coverage, especially for edge cases
