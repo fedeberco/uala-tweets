@@ -36,9 +36,10 @@ const (
 )
 
 func main() {
-	// --- Database ---
+	// --- Database and Repositories ---
 	db := mustSetupDatabase()
 	defer db.Close()
+	userRepo, followRepo, tweetRepo := initRepositories(db)
 
 	// --- Kafka Writers ---
 	tweetsWriter := initKafkaWriter(TopicTweetsCreated)
@@ -48,12 +49,6 @@ func main() {
 	defer fanoutWriter.Close()
 	defer followWriter.Close()
 
-	// --- Repository and Publisher Initialization ---
-	userRepo, followRepo, tweetRepo := initRepositories(db)
-	tweetPub := adapters_publishers.NewKafkaTweetPublisher(tweetsWriter)
-	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(fanoutWriter)
-	followPub := adapters_publishers.NewKafkaFollowPublisher(followWriter)
-
 	// --- Kafka Readers ---
 	tweetCreateKafkaReader := initKafkaTweetCreateReader()
 	fanoutKafkaReader := initKafkaFanoutReader()
@@ -61,6 +56,11 @@ func main() {
 	defer tweetCreateKafkaReader.Close()
 	defer fanoutKafkaReader.Close()
 	defer followKafkaReader.Close()
+
+	// --- Publisher Initialization ---
+	tweetPub := adapters_publishers.NewKafkaTweetPublisher(tweetsWriter)
+	fanoutPub := adapters_publishers.NewKafkaTimelineFanoutPublisher(fanoutWriter)
+	followPub := adapters_publishers.NewKafkaFollowPublisher(followWriter)
 
 	// --- Redis and Timeline Cache ---
 	redisClient := redis.NewClient(&redis.Options{
@@ -139,9 +139,16 @@ func initKafkaTweetCreateReader() *kafka.Reader {
 		broker = "localhost:29092"
 	}
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{broker},
-		Topic:   TopicTweetsCreated,
-		GroupID: ConsumerGroupTweetConsumer,
+		Brokers:     []string{broker},
+		Topic:       TopicTweetsCreated,
+		GroupID:     ConsumerGroupTweetConsumer,
+		StartOffset: kafka.FirstOffset,
+		Logger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[TWEET-READER] "+s, args...)
+		}),
+		ErrorLogger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[TWEET-READER-ERROR] "+s, args...)
+		}),
 	})
 }
 
@@ -151,9 +158,16 @@ func initKafkaFanoutReader() *kafka.Reader {
 		broker = "localhost:29092"
 	}
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{broker},
-		Topic:   TopicTimelineFanout,
-		GroupID: ConsumerGroupFanoutConsumer,
+		Brokers:     []string{broker},
+		Topic:       TopicTimelineFanout,
+		GroupID:     ConsumerGroupFanoutConsumer,
+		StartOffset: kafka.FirstOffset,
+		Logger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[TIMELINE-READER] "+s, args...)
+		}),
+		ErrorLogger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[TIMELINE-READER-ERROR] "+s, args...)
+		}),
 	})
 }
 
@@ -164,9 +178,16 @@ func initKafkaFollowReader() *kafka.Reader {
 	}
 
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{broker},
-		Topic:   TopicUserFollowEvents,
-		GroupID: ConsumerGroupFollowConsumer,
+		Brokers:     []string{broker},
+		Topic:       TopicUserFollowEvents,
+		GroupID:     ConsumerGroupFollowConsumer,
+		StartOffset: kafka.FirstOffset,
+		Logger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[FOLLOW-READER] "+s, args...)
+		}),
+		ErrorLogger: kafka.LoggerFunc(func(s string, args ...interface{}) {
+			log.Printf("[FOLLOW-READER-ERROR] "+s, args...)
+		}),
 	})
 }
 
@@ -228,6 +249,11 @@ func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.Us
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
+		_, err := kafka.Dial("tcp", "kafka:29092")
+		if err != nil {
+			c.JSON(500, gin.H{"status": "error", "kafka": "unreachable"})
+			return
+		}
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
