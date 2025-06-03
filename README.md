@@ -50,15 +50,7 @@ git clone https://github.com/fedeberco/uala-tweets.git
 cd uala-tweets
 ```
 
-### 2. Set up environment variables
-
-Copy the example environment file and update the values as needed:
-
-```bash
-cp .env.example .env
-```
-
-### 3. Start services with Docker
+### 2. Start services with Docker
 
 Start all required services (PostgreSQL, Redis, Kafka, ZooKeeper):
 
@@ -66,7 +58,7 @@ Start all required services (PostgreSQL, Redis, Kafka, ZooKeeper):
 make start-docker
 ```
 
-### 4. Start the application
+### 3. Start the application
 
 #### Option A: Run locally (recommended for development)
 
@@ -147,13 +139,4 @@ Key environment variables:
 - `DB_URL`: PostgreSQL connection string
 - `REDIS_ADDR`: Redis address (default: localhost:6379)
 - `KAFKA_BROKER`: Kafka broker address (default: localhost:9092)
-
-## 📦 Dependencies
-
-- **Web Framework**: [Gin](https://github.com/gin-gonic/gin)
-- **Database**: PostgreSQL with [lib/pq](https://github.com/lib/pq)
-- **Caching**: [Redis](https://redis.io/)
-- **Message Broker**: [Kafka](https://kafka.apache.org/)
-- **Testing**: [testify](https://github.com/stretchr/testify)
-- **Documentation**: [Swagger](https://swagger.io/)
 
