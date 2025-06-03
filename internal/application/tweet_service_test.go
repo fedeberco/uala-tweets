@@ -39,7 +39,6 @@ func (m *MockTweetRepository) GetByUserID(userID int64) ([]*domain.Tweet, error)
 	return args.Get(0).([]*domain.Tweet), args.Error(1)
 }
 
-
 func (m *MockTweetRepository) GetTweetIDsByUser(userID int) ([]int64, error) {
 	args := m.Called(userID)
 	if args.Get(0) == nil {

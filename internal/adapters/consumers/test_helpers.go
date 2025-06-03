@@ -18,9 +18,11 @@ type MockKafkaReader struct {
 
 type MockFollowRepository struct{}
 
-func (m *MockFollowRepository) Follow(followerID, followedID int) error { return nil }
+func (m *MockFollowRepository) Follow(followerID, followedID int) error   { return nil }
 func (m *MockFollowRepository) Unfollow(followerID, followedID int) error { return nil }
-func (m *MockFollowRepository) IsFollowing(followerID, followedID int) (bool, error) { return false, nil }
+func (m *MockFollowRepository) IsFollowing(followerID, followedID int) (bool, error) {
+	return false, nil
+}
 func (m *MockFollowRepository) GetFollowers(userID int) ([]int, error) { return []int{}, nil }
 
 func NewMockKafkaReader(msg kafka.Message) *MockKafkaReader {
