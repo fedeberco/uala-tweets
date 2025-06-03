@@ -23,15 +23,27 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+const (
+	// Topics
+	TopicTweetsCreated    = "tweets.created"
+	TopicTimelineFanout   = "timeline.fanout"
+	TopicUserFollowEvents = "user.follow.events"
+
+	// Consumer Groups
+	ConsumerGroupTweetConsumer  = "tweet-consumer-group"
+	ConsumerGroupFanoutConsumer = "fanout-consumer-group"
+	ConsumerGroupFollowConsumer = "follow-consumer-group"
+)
+
 func main() {
 	// --- Database ---
 	db := mustSetupDatabase()
 	defer db.Close()
 
 	// --- Kafka Writers ---
-	tweetsWriter := initKafkaWriter("tweets.created")
-	fanoutWriter := initKafkaWriter("timeline.fanout")
-	followWriter := initKafkaWriter("user.follow")
+	tweetsWriter := initKafkaWriter(TopicTweetsCreated)
+	fanoutWriter := initKafkaWriter(TopicTimelineFanout)
+	followWriter := initKafkaWriter(TopicUserFollowEvents)
 	defer tweetsWriter.Close()
 	defer fanoutWriter.Close()
 	defer followWriter.Close()
@@ -128,8 +140,8 @@ func initKafkaTweetCreateReader() *kafka.Reader {
 	}
 	return kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{broker},
-		Topic:   "tweets.created",
-		GroupID: "tweet-consumer-group",
+		Topic:   TopicTweetsCreated,
+		GroupID: ConsumerGroupTweetConsumer,
 	})
 }
 
@@ -140,21 +152,21 @@ func initKafkaFanoutReader() *kafka.Reader {
 	}
 	return kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{broker},
-		Topic:   "timeline.fanout",
-		GroupID: "fanout-consumer-group",
+		Topic:   TopicTimelineFanout,
+		GroupID: ConsumerGroupFanoutConsumer,
 	})
 }
 
 func initKafkaFollowReader() *kafka.Reader {
-	broker := getEnv("KAFKA_BROKER", "localhost:9092")
-	groupID := getEnv("KAFKA_GROUP_ID", "timeline-follow-consumer-group")
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:29092"
+	}
 
 	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{broker},
-		GroupID:  groupID,
-		Topic:    "user.follow",
-		MinBytes: 10,   // 10KB
-		MaxBytes: 10e6, // 10MB
+		Brokers: []string{broker},
+		Topic:   TopicUserFollowEvents,
+		GroupID: ConsumerGroupFollowConsumer,
 	})
 }
 

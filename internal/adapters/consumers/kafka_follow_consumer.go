@@ -3,6 +3,7 @@ package consumers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 
 	"uala-tweets/internal/domain"
@@ -31,14 +32,18 @@ func (c *KafkaFollowConsumer) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				log.Printf("Context canceled, stopping consumer")
+				return nil
+			}
 			log.Printf("Context done, stopping consumer: %v", ctx.Err())
 			return ctx.Err()
 		default:
 			m, err := c.reader.ReadMessage(ctx)
 			if err != nil {
-				if ctx.Err() != nil {
-					log.Printf("Context error, stopping consumer: %v", ctx.Err())
-					return ctx.Err()
+				if errors.Is(err, context.Canceled) {
+					log.Printf("Context canceled, stopping consumer")
+					return nil
 				}
 				log.Printf("Error reading from kafka: %v", err)
 				continue

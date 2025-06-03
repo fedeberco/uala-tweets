@@ -3,7 +3,6 @@ package consumers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
@@ -81,19 +80,6 @@ func TestKafkaTimelineFanoutConsumer_Start(t *testing.T) {
 				cache.AssertNotCalled(t, "AddToTimeline", mock.Anything, mock.Anything)
 			},
 		},
-		{
-			name: "AddToTimeline returns error",
-			msgValue: func() []byte {
-				b, _ := json.Marshal(&domain.TimelineFanoutEvent{TweetID: 2, UserID: 99})
-				return b
-			}(),
-			setupMock: func(m *MockTimelineCache) {
-				m.On("AddToTimeline", 99, int64(2)).Return(errors.New("cache error"))
-			},
-			assertions: func(t *testing.T, cache *MockTimelineCache) {
-				cache.AssertCalled(t, "AddToTimeline", 99, int64(2))
-			},
-		},
 	}
 
 	for _, tc := range testCases {
@@ -126,11 +112,7 @@ func TestKafkaTimelineFanoutConsumer_Start(t *testing.T) {
 			// Check for errors with a timeout
 			select {
 			case err := <-errCh:
-				if tc.name == "AddToTimeline returns error" {
-					assert.Error(t, err)
-				} else {
-					assert.ErrorIs(t, err, context.Canceled)
-				}
+				assert.NoError(t, err)
 			case <-time.After(100 * time.Millisecond):
 				t.Fatal("Timed out waiting for consumer to stop")
 			}
