@@ -1,3 +1,18 @@
+// @title           Uala Tweets API
+// @version         1.0
+// @description     This is a Twitter-like API service.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.uala.com/support
+// @contact.email  support@uala.com
+// @license.name   Apache 2.0
+// @license.url    http://www.apache.org/licenses/LICENSE-2.0.html
+// @host      localhost:8000
+// @BasePath  /
+// @securityDefinitions.apikey  ApiKeyAuth
+// @in                          header
+// @name                        Authorization
 package main
 
 import (
@@ -14,6 +29,9 @@ import (
 	"uala-tweets/internal/application"
 	"uala-tweets/internal/interfaces/handlers"
 
+	// Import docs for Swagger
+	_ "uala-tweets/docs"
+
 	pubports "uala-tweets/internal/ports/publishers"
 	repoports "uala-tweets/internal/ports/repositories"
 
@@ -21,6 +39,8 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 const (
@@ -84,7 +104,7 @@ func main() {
 	r := setupRouter(followHandler, userHandler, tweetHandler, timelineHandler)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8000"
 	}
 	log.Printf("Server starting on port %s", port)
 	if err := r.Run(":" + port); err != nil {
@@ -248,6 +268,13 @@ func initHandlers(
 func setupRouter(followHandler *handlers.FollowHandler, userHandler *handlers.UserHandler, tweetHandler *handlers.TweetHandler, timelineHandler *handlers.TimelineHandler) *gin.Engine {
 	r := gin.Default()
 
+	// Swagger docs route
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, 
+		ginSwagger.URL("http://localhost:8000/swagger/doc.json"),
+		ginSwagger.DefaultModelsExpandDepth(-1),
+	))
+
+	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
 		_, err := kafka.Dial("tcp", "kafka:29092")
 		if err != nil {

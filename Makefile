@@ -6,6 +6,7 @@
 #     make start-local      # Start all services in Docker and run app locally
 #     make test-local       # Run tests locally
 #     make install-deps     # Install Go dependencies
+#     make swagger          # Generate Swagger API documentation
 # 
 #   Docker Development:
 #     make start-docker     # Start all services in Docker
@@ -52,8 +53,15 @@ start-local: docker-up migrate-up
 
 ## Install Go dependencies
 install-deps:
-	@echo "Installing dependencies..."
-	@go mod download
+	@echo "Installing Go dependencies..."
+	go mod download
+	go install github.com/swaggo/swag/cmd/swag@latest
+
+## Generate Swagger API documentation
+swagger:
+	@echo "Generating Swagger documentation..."
+	$(shell go env GOPATH)/bin/swag init -g main.go
+	@echo "Swagger documentation generated at ./docs"
 
 ## Start test environment
 test-env-up:
